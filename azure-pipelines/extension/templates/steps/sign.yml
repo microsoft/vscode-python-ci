@@ -75,20 +75,12 @@ steps:
     inputs:
       command: restore
       feedsToUse: config
-      restoreSolution: "$(Build.SourcesDirectory)/packages.config"
-      restoreDirectory: "$(Build.SourcesDirectory)/packages"
-      nugetConfigPath: "$(Build.SourcesDirectory)/build/NuGet.config"
+      nugetConfigPath: "./tools/signing/nuget.config"
 
   - template: setup.yml
     parameters:
       customNPMRegistry: ${{ parameters.customNPMRegistry }}
       nodeVersion: ${{ parameters.nodeVersion }}
-
-  - task: Npm@1
-    displayName: "npm ci (install vsce)"
-    inputs:
-      command: ci
-      workingDir: "$(Build.SourcesDirectory)"
 
   # Workaround for intermittent MicroBuild plugin install collisions
   # (e.g. "An item with the specified name ...\\MicroBuild\\Plugins\\Az.Accounts already exists")
@@ -220,7 +212,7 @@ steps:
       - task: MSBuild@1
         displayName: "🔏 Sign ${{ coalesce(platform.vsceTarget, 'universal') }}"
         inputs:
-          solution: "$(Build.SourcesDirectory)/build/sign.proj"
+          solution: "./tools/signing/sign.proj"
           msbuildArguments: >
             /verbosity:detailed
             /bl:"${{ parameters.workingDirectory }}/${{ coalesce(platform.vsceTarget, 'universal') }}/signing.binlog"
