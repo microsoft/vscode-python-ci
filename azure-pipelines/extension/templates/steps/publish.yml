@@ -107,12 +107,12 @@ steps:
               Write-Host 'Publishing as pre-release'
               $displayCmd = "Executing: npx @vscode/vsce@latest publish --pat *** --packagePath $vsixPath --manifestPath $manifestPath --signaturePath $signaturePath --no-verify --pre-release"
               Write-Host $displayCmd
-              # npx @vscode/vsce@latest publish --pat $aadToken --packagePath $vsixPath --manifestPath $manifestPath --signaturePath $signaturePath --no-verify --pre-release
+              npx @vscode/vsce@latest publish --pat $aadToken --packagePath $vsixPath --manifestPath $manifestPath --signaturePath $signaturePath --no-verify --pre-release
             } else {
               Write-Host 'Publishing as stable release'
               $displayCmd = "Executing: npx @vscode/vsce@latest publish --pat *** --packagePath $vsixPath --manifestPath $manifestPath --signaturePath $signaturePath --no-verify"
               Write-Host $displayCmd
-              # npx @vscode/vsce@latest publish --pat $aadToken --packagePath $vsixPath --manifestPath $manifestPath --signaturePath $signaturePath --no-verify
+              npx @vscode/vsce@latest publish --pat $aadToken --packagePath $vsixPath --manifestPath $manifestPath --signaturePath $signaturePath --no-verify
             }
 
             if ($LASTEXITCODE -ne 0) {
