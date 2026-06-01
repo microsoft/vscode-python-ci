@@ -1,8 +1,12 @@
-schemaVersion: 0.0.1
-isProduction: false
-accountableOwners:
-  service: e3c408e8-09e7-404f-a9af-22b4ac3807a3
-routing:
-  defaultAreaPath:
-    org: devdiv
-    path: DevDiv\Python and AI Tools\Python\VS IDE
+schemaVersion: 1.0.0
+providers:
+- provider: InventoryAsCode
+  version: 1.0.0
+  metadata:
+    isProduction: false
+    accountableOwners:
+      service: e3c408e8-09e7-404f-a9af-22b4ac3807a3
+    routing:
+      defaultAreaPath:
+        org: devdiv
+        path: DevDiv\Python and AI Tools\Python\VS IDE
