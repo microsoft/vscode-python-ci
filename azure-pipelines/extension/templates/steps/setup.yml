@@ -19,7 +19,7 @@ parameters:
     default: '22.17.0'
   - name: pythonVersion
     type: string
-    default: '3.9'
+    default: '3.10'
   - name: npmrcPath
     type: string
     default: '$(Agent.TempDirectory)/.npmrc'

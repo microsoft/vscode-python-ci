@@ -22,7 +22,7 @@ This repo is a reusable pipeline-template repository for VS Code extension packa
   - Runs provided build steps
   - Produces per-platform VSIX artifacts (`vsix-<vsceTarget>` / `vsix-universal`)
 - **Environment/bootstrap layer**: `azure-pipelines/extension/templates/steps/setup.yml`
-  - Installs Node (default `22.17.0`) and Python (default `3.9`)
+  - Installs Node (default `22.17.0`) and Python (default `3.10`)
   - Configures custom npm registry/auth (including lockfile rewriting when needed)
 - **Signing layer**: `azure-pipelines/extension/templates/steps/sign.yml`
   - Restores signing tool dependencies
