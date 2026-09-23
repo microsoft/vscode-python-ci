@@ -120,23 +120,23 @@ jobs:
 
           - ${{ if eq(parameters.isPreRelease, false) }}:
               - ${{ if eq(platform.vsceTarget, '') }}:
-                  - script: npx @vscode/vsce@latest package -o $(Build.BinariesDirectory)/$(SetExtensionName.VSIX) ${{ parameters.vscePackageArgs }}
+                  - script: npx --no-install vsce package -o $(Build.BinariesDirectory)/$(SetExtensionName.VSIX) ${{ parameters.vscePackageArgs }}
                     displayName: 💾 Package extension
                     workingDirectory: ${{ parameters.workingDirectory }}
 
               - ${{ if ne(platform.vsceTarget, '') }}:
-                  - script: npx @vscode/vsce@latest package -o $(Build.BinariesDirectory)/$(SetExtensionName.VSIX) --target ${{ platform.vsceTarget }} ${{ parameters.vscePackageArgs }}
+                  - script: npx --no-install vsce package -o $(Build.BinariesDirectory)/$(SetExtensionName.VSIX) --target ${{ platform.vsceTarget }} ${{ parameters.vscePackageArgs }}
                     displayName: 💾 Package extension
                     workingDirectory: ${{ parameters.workingDirectory }}
 
           - ${{ if eq(parameters.isPreRelease, true) }}:
               - ${{ if eq(platform.vsceTarget, '') }}:
-                  - script: npx @vscode/vsce@latest package -o $(Build.BinariesDirectory)/$(SetExtensionName.VSIX) --pre-release ${{ parameters.vscePackageArgs }}
+                  - script: npx --no-install vsce package -o $(Build.BinariesDirectory)/$(SetExtensionName.VSIX) --pre-release ${{ parameters.vscePackageArgs }}
                     displayName: 💾 Package pre-release extension
                     workingDirectory: ${{ parameters.workingDirectory }}
 
               - ${{ if ne(platform.vsceTarget, '') }}:
-                  - script: npx @vscode/vsce@latest package -o $(Build.BinariesDirectory)/$(SetExtensionName.VSIX) --target ${{ platform.vsceTarget }} --pre-release ${{ parameters.vscePackageArgs }}
+                  - script: npx --no-install vsce package -o $(Build.BinariesDirectory)/$(SetExtensionName.VSIX) --target ${{ platform.vsceTarget }} --pre-release ${{ parameters.vscePackageArgs }}
                     displayName: 💾 Package pre-release extension
                     workingDirectory: ${{ parameters.workingDirectory }}
 
