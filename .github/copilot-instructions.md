@@ -47,4 +47,8 @@ This repo is a reusable pipeline-template repository for VS Code extension packa
 - **Versioning convention** (pre-release standardized mode): patch version is `{YYYYMMDD}{RR}` from Azure DevOps build number (`modify-extension-version.yml`).
 - **Registry/auth convention**: custom npm registry support is centralized in `steps/setup.yml`; lockfiles are rewritten to keep installs and `npx` on the same registry.
 - **Compliance/approval convention**: changes in protected branches require approvers from applicable `owners.txt` entries.
-- **Optional sister-repo scope**: only when explicitly requested, also apply corresponding updates to these repos: `vscode-python-debugger`, `vscode-pylint`, `vscode-isort`, `vscode-flake8`, `vscode-autopep8`, `vscode-mypy`, `vscode-black-formatter`; do not modify them by default.
+- **Optional sibling-repo scope**: only when explicitly requested, also apply corresponding updates to these repos: `vscode-python-debugger`, `vscode-python-environments`, `vscode-pylint`, `vscode-isort`, `vscode-flake8`, `vscode-autopep8`, `vscode-mypy`, `vscode-black-formatter`; do not modify them by default.
+
+## Communication conventions
+
+- **Teams-ready messages**: When summarizing work for Teams (e.g., release rollouts, cross-repo updates), always include a list of PRs with clickable links, repo names, PR numbers, and current status (✅ merged, ⏳ awaiting approval, etc.). Format for easy copy-paste into a Teams channel.
