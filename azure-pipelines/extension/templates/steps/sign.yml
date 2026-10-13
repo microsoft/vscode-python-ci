@@ -21,7 +21,7 @@ parameters:
     default: "$(Build.StagingDirectory)"
   - name: nodeVersion
     type: string
-    default: "22.17.0"
+    default: "22.21.1"
   - name: signType
     type: string
     default: real
@@ -84,11 +84,10 @@ steps:
       customNPMRegistry: ${{ parameters.customNPMRegistry }}
       nodeVersion: ${{ parameters.nodeVersion }}
 
-  - task: Npm@1
+  # Use setup.yml's authenticated user config; Npm@1 replaces it with its own.
+  - script: npm ci
     displayName: "npm ci (install vsce)"
-    inputs:
-      command: ci
-      workingDir: "$(Build.SourcesDirectory)"
+    workingDirectory: "$(Build.SourcesDirectory)"
 
   # Workaround for intermittent MicroBuild plugin install collisions
   # (e.g. "An item with the specified name ...\\MicroBuild\\Plugins\\Az.Accounts already exists")

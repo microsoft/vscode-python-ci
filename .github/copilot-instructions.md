@@ -22,7 +22,7 @@ This repo is a reusable pipeline-template repository for VS Code extension packa
   - Runs provided build steps
   - Produces per-platform VSIX artifacts (`vsix-<vsceTarget>` / `vsix-universal`)
 - **Environment/bootstrap layer**: `azure-pipelines/extension/templates/steps/setup.yml`
-  - Installs Node (default `22.17.0`) and Python (default `3.10`)
+  - Installs Node (default `22.21.1`) and Python (default `3.10`)
   - Configures custom npm registry/auth (including lockfile rewriting when needed)
 - **Signing layer**: `azure-pipelines/extension/templates/steps/sign.yml`
   - Restores signing tool dependencies
@@ -46,6 +46,7 @@ This repo is a reusable pipeline-template repository for VS Code extension packa
   - Signing outputs per platform folder include `extension.manifest` and `extension.signature.p7s`
 - **Versioning convention** (pre-release standardized mode): patch version is `{YYYYMMDD}{RR}` from Azure DevOps build number (`modify-extension-version.yml`).
 - **Registry/auth convention**: custom npm registry support is centralized in `steps/setup.yml`; lockfiles are rewritten to keep installs and `npx` on the same registry.
+- **Signing install convention**: run `npm ci` as a script so it uses the authenticated `NPM_CONFIG_USERCONFIG` from `steps/setup.yml`; `Npm@1` replaces that config.
 - **Compliance/approval convention**: changes in protected branches require approvers from applicable `owners.txt` entries.
 - **Optional sibling-repo scope**: only when explicitly requested, also apply corresponding updates to these repos: `vscode-python-debugger`, `vscode-python-environments`, `vscode-pylint`, `vscode-isort`, `vscode-flake8`, `vscode-autopep8`, `vscode-mypy`, `vscode-black-formatter`; do not modify them by default.
 
