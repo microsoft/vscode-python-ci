@@ -4,49 +4,54 @@
 # Template for building platform-specific VSIX packages
 # Sets VSCETARGET environment variable for noxfile.py to select correct debugpy wheels
 # Iterates over buildPlatforms to create a job per platform
+# Localization is pull-only and opt-in; declare translations and localizationTools.
 
 parameters:
   - name: buildPlatforms
     type: object
-    displayName: "List of platforms to build"
+    displayName: 'List of platforms to build'
     default:
       - name: Linux
         vsceTarget:
 
   - name: customNPMRegistry
     type: string
-    default: ""
-    displayName: "Custom NPM registry (optional)"
+    default: ''
+    displayName: 'Custom NPM registry (optional)'
 
   - name: nodeVersion
     type: string
-    default: "22.21.1"
-    displayName: "Node version to install"
+    default: '22.21.1'
+    displayName: 'Node version to install'
 
   - name: buildSteps
     type: stepList
     default: []
-    displayName: "Build steps to execute"
+    displayName: 'Build steps to execute'
 
   - name: isPreRelease
     type: boolean
     default: false
-    displayName: "Is this a pre-release build"
+    displayName: 'Is this a pre-release build'
 
   - name: standardizedVersioning
     type: boolean
     default: false
-    displayName: "Use standardized versioning (YYYYMMDDRR format)"
+    displayName: 'Use standardized versioning (YYYYMMDDRR format)'
 
   - name: vscePackageArgs
     type: string
-    default: ""
-    displayName: "Additional vsce package arguments"
+    default: ''
+    displayName: 'Additional vsce package arguments'
 
   - name: workingDirectory
     type: string
-    default: "$(Build.SourcesDirectory)"
-    displayName: "Working directory for packaging"
+    default: '$(Build.SourcesDirectory)'
+    displayName: 'Working directory for packaging'
+
+  - name: pullLocalization
+    type: boolean
+    default: false
 
 jobs:
   - ${{ each platform in parameters.buildPlatforms }}:
@@ -80,10 +85,14 @@ jobs:
           outputs:
             - output: pipelineArtifact
               displayName: "Publish VSIX for ${{ coalesce(platform.vsceTarget, 'universal') }}"
-              targetPath: "$(Build.ArtifactStagingDirectory)/drop"
+              targetPath: '$(Build.ArtifactStagingDirectory)/drop'
               artifactName: vsix-${{ coalesce(platform.vsceTarget, 'universal') }}
 
         steps:
+          # Keep the source root stable when buildSteps check out additional repositories.
+          - checkout: self
+            path: s
+
           - template: ../steps/setup.yml
             parameters:
               customNPMRegistry: ${{ parameters.customNPMRegistry }}
@@ -97,10 +106,15 @@ jobs:
           - bash: |
               echo "##vso[task.setvariable variable=VSCETARGET]${{ platform.vsceTarget }}"
               echo "Building for target: ${{ platform.vsceTarget }}"
-            displayName: "Set VSCETARGET variable"
+            displayName: 'Set VSCETARGET variable'
 
           - ${{ each buildStep in parameters.buildSteps }}:
               - ${{ buildStep }}
+
+          - ${{ if parameters.pullLocalization }}:
+              - template: ../steps/import-localized-files.yml
+                parameters:
+                  workingDirectory: ${{ parameters.workingDirectory }}
 
           - ${{ if eq(platform.vsceTarget, '') }}:
               - bash: |
@@ -143,6 +157,6 @@ jobs:
           - task: CopyFiles@2
             inputs:
               sourceFolder: $(Build.BinariesDirectory)
-              contents: "*.vsix"
+              contents: '*.vsix'
               targetFolder: $(Build.ArtifactStagingDirectory)/drop
             displayName: 📦 Copy VSIX to staging

@@ -1,0 +1,73 @@
+# Copyright (c) Microsoft Corporation. All rights reserved.
+# Licensed under the MIT License.
+#
+# Pre-release entry point. Owns build, signing, and publishing stages.
+# Reference Pylance-Eng as "templates"; publishing is opt-in.
+parameters:
+  - name: buildSteps
+    type: stepList
+    default: []
+  - name: publishExtension
+    type: boolean
+    default: false
+  - name: teamName
+    type: string
+  - name: customNPMRegistry
+    type: string
+    default: ''
+  - name: sourceRepositoriesToExclude
+    type: object
+    default: []
+  - name: sourceAnalysisPool
+    type: string
+    default: 'VSEngSS-MicroBuild2022-1ES'
+  - name: pullLocalization
+    type: boolean
+    default: false
+  - name: nodeVersion
+    type: string
+    default: '22.21.1'
+  - name: workingDirectory
+    type: string
+    default: '$(Build.SourcesDirectory)'
+  - name: buildPlatforms
+    type: object
+    default:
+      - name: Linux
+        vsceTarget:
+  - name: standardizedVersioning
+    type: boolean
+    default: true
+  - name: vscePackageArgs
+    type: string
+    default: ''
+  - name: ghCreateTag
+    type: boolean
+    default: true
+  - name: ghCreateRelease
+    type: boolean
+    default: true
+  - name: ghReleaseAddChangeLog
+    type: boolean
+    default: true
+
+extends:
+  template: /azure-pipelines/extension/templates/pipeline.yml@templates
+  parameters:
+    buildSteps: ${{ parameters.buildSteps }}
+    publishExtension: ${{ parameters.publishExtension }}
+    teamName: ${{ parameters.teamName }}
+    isPreRelease: true
+    validationNotifyUsers: ''
+    customNPMRegistry: ${{ parameters.customNPMRegistry }}
+    sourceRepositoriesToExclude: ${{ parameters.sourceRepositoriesToExclude }}
+    sourceAnalysisPool: ${{ parameters.sourceAnalysisPool }}
+    pullLocalization: ${{ parameters.pullLocalization }}
+    nodeVersion: ${{ parameters.nodeVersion }}
+    workingDirectory: ${{ parameters.workingDirectory }}
+    buildPlatforms: ${{ parameters.buildPlatforms }}
+    standardizedVersioning: ${{ parameters.standardizedVersioning }}
+    vscePackageArgs: ${{ parameters.vscePackageArgs }}
+    ghCreateTag: ${{ parameters.ghCreateTag }}
+    ghCreateRelease: ${{ parameters.ghCreateRelease }}
+    ghReleaseAddChangeLog: ${{ parameters.ghReleaseAddChangeLog }}

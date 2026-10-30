@@ -1,0 +1,30 @@
+# Copyright (c) Microsoft Corporation. All rights reserved.
+# Licensed under the MIT License.
+#
+# Consumers declare translations (drop dev) and localizationTools (reviewed immutable
+# common-LSP revision), both using the literal Github-Pylance service connection.
+# Run after caller build steps so pre-built overlays cannot overwrite handbacks.
+parameters:
+  - name: workingDirectory
+    type: string
+    default: '$(Build.SourcesDirectory)'
+
+steps:
+  - checkout: localizationTools
+    displayName: Checkout shared localization tooling
+    path: localization-tools
+    fetchDepth: 1
+
+  - checkout: translations
+    displayName: Checkout latest localization drop
+    path: localization-translations
+    fetchDepth: 1
+
+  - script: >-
+      python "$(Pipeline.Workspace)/localization-tools/scripts/localization.py"
+      --operation import
+      --extension-root "${{ parameters.workingDirectory }}"
+      --translations-root "$(Pipeline.Workspace)/localization-translations/out"
+      --output-directory "$(Agent.TempDirectory)/release-localization-$(System.JobId)-$(System.JobAttempt)"
+    displayName: Import and validate latest extension translations
+    workingDirectory: ${{ parameters.workingDirectory }}
