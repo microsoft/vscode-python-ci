@@ -188,7 +188,7 @@ This check evaluates declared matrix coverage, not installation settings or test
         arguments,
         env=env,
         check=True,
-        capture_output=True,
+        stdout=subprocess.PIPE,
         text=True,
         encoding="utf-8",
         timeout=120,
