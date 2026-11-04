@@ -130,11 +130,11 @@ python -m unittest discover -s actions/check-python-versions/tests -v
 
 Tests mock network/issue operations and cover release filtering, matrix parsing,
 path validation, output generation, and failure handling. The repository's
-`smoke-python-versions-action.yml` workflow only runs the composite action in
-check-only mode against a representative workflow fixture. It passes when the
-action exits successfully, without additional output assertions or a unit-test
-step. This smoke test uses the live Python.org API and can fail if that API is
-unavailable.
+`smoke-python-versions-action.yml` workflow runs the composite action in
+check-only mode against a representative workflow fixture, then runs the unit
+tests using the Python environment installed by the action. The smoke test
+passes when the action exits successfully, without additional output assertions.
+It uses the live Python.org API and can fail if that API is unavailable.
 
 Before release, pilot check-only calls with the seven existing consumers' file
 lists, then validate issue creation in a test repository. Duplicate detection,
