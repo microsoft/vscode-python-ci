@@ -1,0 +1,30 @@
+name: Validate Python version check action
+
+on:
+  push:
+    paths:
+      - actions/check-python-versions/**
+      - .github/workflows/smoke-python-versions-action.yml
+  pull_request:
+    paths:
+      - actions/check-python-versions/**
+      - .github/workflows/smoke-python-versions-action.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Smoke test composite action
+        uses: ./actions/check-python-versions
+        with:
+          files: |
+            - path: actions/check-python-versions/tests/fixtures/workflow.yml
+              key: python
+            - path: actions/check-python-versions/tests/fixtures/workflow.yml
+              key: python-version
+          create-issue: 'false'

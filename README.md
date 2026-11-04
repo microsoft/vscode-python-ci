@@ -17,6 +17,13 @@ TODO: Guide users through getting your code up and running on their own system. 
 
 # Build and Test
 
+## GitHub Actions
+
+The [CI Python version check action](actions/check-python-versions/README.md)
+checks caller-supplied workflow matrices for newly published Python
+release-candidate series and optionally opens a maintenance issue. Its
+documentation covers the caller workflow, supported matrix forms, and tests.
+
 ## Extension localization
 
 The public `azure-pipelines/extension/stable.yml` and `pre-release.yml` entry
