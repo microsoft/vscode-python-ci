@@ -1,0 +1,106 @@
+name: Prepare extension release
+description: Validate a package.json version upgrade and create its stable release branch.
+
+inputs:
+  mode:
+    description: plan validates an open PR; release revalidates the merged change and publishes a branch.
+    required: true
+  token:
+    description: Checkout token; release requires contents write permission.
+    default: ${{ github.token }}
+
+outputs:
+  version:
+    description: Validated development version in plan mode, stable version in release mode; empty for ordinary PRs.
+    value: ${{ steps.validate.outputs.version }}
+
+runs:
+  using: composite
+  steps:
+    - name: Reject invalid mode or event
+      if: >-
+        (inputs.mode != 'plan' && inputs.mode != 'release') ||
+        (github.event_name != 'pull_request' && github.event_name != 'pull_request_target') ||
+        (inputs.mode == 'plan' && (github.event_name != 'pull_request' || github.event.pull_request.state != 'open')) ||
+        (inputs.mode == 'release' && (github.event.action != 'closed' || github.event.pull_request.merged != true))
+      shell: bash
+      run: |
+        exit 1
+    - name: Check out the exact source commit
+      uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      with:
+        ref: ${{ inputs.mode == 'release' && github.event.pull_request.merge_commit_sha || github.event.pull_request.head.sha }}
+        fetch-depth: 0
+        token: ${{ inputs.token }}
+    - name: Set up tooling Python
+      uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+      with:
+        python-version: "3.13"
+    - name: Fetch the recorded base
+      shell: bash
+      env:
+        BASE_SHA: ${{ github.event.pull_request.base.sha }}
+      run: |
+        git fetch --no-tags origin "$BASE_SHA"
+    - name: Check for a manifest-only change
+      id: files
+      shell: bash
+      env:
+        BASE_SHA: ${{ github.event.pull_request.base.sha }}
+      run: |
+        files=$(git diff --no-ext-diff --no-renames --name-only "$BASE_SHA...HEAD" --)
+        echo "changed=$([[ "$files" == package.json ]] && echo true || echo false)" >> "$GITHUB_OUTPUT"
+    - name: Check manifest file modes
+      if: steps.files.outputs.changed == 'true'
+      shell: bash
+      env:
+        BASE_SHA: ${{ github.event.pull_request.base.sha }}
+      run: |
+        change=$(git diff --no-ext-diff --no-renames --raw "$BASE_SHA...HEAD" -- package.json)
+        [[ "$change" == ":100644 100644 "* || "$change" == ":100755 100755 "* ]]
+    - name: Find the comparison base
+      if: steps.files.outputs.changed == 'true'
+      shell: bash
+      env:
+        BASE_SHA: ${{ github.event.pull_request.base.sha }}
+      run: |
+        git merge-base "$BASE_SHA" HEAD > "$RUNNER_TEMP/release-pr.base-sha"
+    - name: Read the base manifest
+      if: steps.files.outputs.changed == 'true'
+      shell: bash
+      run: |
+        git show "$(cat "$RUNNER_TEMP/release-pr.base-sha"):package.json" > "$RUNNER_TEMP/release-pr.before.json"
+    - name: Read the source manifest
+      if: steps.files.outputs.changed == 'true'
+      shell: bash
+      run: |
+        git show HEAD:package.json > "$RUNNER_TEMP/release-pr.after.json"
+    - name: Validate and prepare the manifest
+      id: validate
+      if: steps.files.outputs.changed == 'true'
+      shell: bash
+      env:
+        ACTION_PATH: ${{ github.action_path }}
+        RELEASE_MODE: ${{ inputs.mode }}
+      run: |
+        python "$ACTION_PATH/scripts/release_pr.py"
+    - name: Stage the stable manifest
+      if: inputs.mode == 'release' && steps.validate.outputs.version != ''
+      shell: bash
+      run: |
+        git add -- package.json
+    - name: Commit the stable manifest
+      if: inputs.mode == 'release' && steps.validate.outputs.version != ''
+      shell: bash
+      env:
+        VERSION: ${{ steps.validate.outputs.version }}
+      run: |
+        git -c user.name=github-actions[bot] -c user.email=41898282+github-actions[bot]@users.noreply.github.com -c core.hooksPath=/dev/null commit -m "Release $VERSION"
+    - name: Push the finished release branch
+      if: inputs.mode == 'release' && steps.validate.outputs.version != ''
+      shell: bash
+      env:
+        VERSION: ${{ steps.validate.outputs.version }}
+      # An empty lease allows creation only, never updating an existing branch.
+      run: |
+        git push --force-with-lease="refs/heads/release/$VERSION:" origin "HEAD:refs/heads/release/$VERSION"

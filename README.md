@@ -1,9 +1,9 @@
 # Pylance Engineering
 
 Shared engineering automation for Pylance and related Python extension
-repositories. This repository currently contains a Python-backed composite
-GitHub Action for checking CI Python-version coverage, along with its tests and
-validation workflow.
+repositories. This repository contains Python-backed composite GitHub Actions
+for checking CI Python-version coverage and preparing extension release branches,
+along with their tests and validation workflows.
 
 ## Check CI Python versions
 
@@ -31,12 +31,14 @@ coverage; it does not detect duplicates.
 
 ## Repository contents
 
-| Path | Purpose |
-|---|---|
-| [actions/check-python-versions/](actions/check-python-versions/) | Composite action definition, documentation, and pinned Python dependencies. |
-| [scripts/check_python_versions.py](actions/check-python-versions/scripts/check_python_versions.py) | Release lookup, workflow matrix checks, reporting, and issue creation. |
-| [tests/](actions/check-python-versions/tests/) | Unit tests and a representative workflow fixture. |
-| [smoke-python-versions-action.yml](.github/workflows/smoke-python-versions-action.yml) | GitHub Actions smoke test and unit-test workflow. |
+| Path                                                                                               | Purpose                                                                     |
+| -------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------- |
+| [actions/check-python-versions/](actions/check-python-versions/)                                   | Composite action definition, documentation, and pinned Python dependencies. |
+| [scripts/check_python_versions.py](actions/check-python-versions/scripts/check_python_versions.py) | Release lookup, workflow matrix checks, reporting, and issue creation.      |
+| [tests/](actions/check-python-versions/tests/)                                                     | Unit tests and a representative workflow fixture.                           |
+| [smoke-python-versions-action.yml](.github/workflows/smoke-python-versions-action.yml)             | GitHub Actions smoke test and unit-test workflow.                           |
+| [actions/release-pr/](actions/release-pr/README.md)                                                | Validate version-only PRs and atomically create stable release branches.    |
+| [smoke-release-pr-action.yml](.github/workflows/smoke-release-pr-action.yml)                       | Cross-platform release-action tests and read-only composite smoke test.     |
 
 ## Local development and validation
 
@@ -46,10 +48,12 @@ version as the action, set up Python 3.13, then run from the repository root:
 ```sh
 python -m pip install -r actions/check-python-versions/requirements.txt
 python -m unittest discover -s actions/check-python-versions/tests -v
+python -m unittest discover -s actions/release-pr/tests -v
 ```
 
-The unit tests mock network and issue operations. The CI workflow also runs the
-composite action in check-only mode against the fixture, using the live
+The Python-version tests mock network and issue operations; the release tests
+use temporary local Git repositories. The Python-version CI workflow also runs
+the composite action in check-only mode against the fixture, using the live
 Python.org API.
 
 When changing the action, update its documentation and tests alongside the
