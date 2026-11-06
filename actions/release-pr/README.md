@@ -128,7 +128,8 @@ performed by the local tests.
 python -m unittest discover -s actions/release-pr/tests -v
 ```
 
-Focused JSON/version tests and local bare-remote Git fixtures execute the actual
-YAML commands, checking plan, merge/squash/rebase release snapshots, ordinary
-PRs, invalid changes, and creation-only pushes. CI runs them on Linux, Windows,
+Focused tests cover version-only JSON changes, upgrade rules, ordinary PRs, and
+lossless release serialization. A small local Git fixture executes the actual
+YAML commands for plan/release behavior, whole-change gating after a rebase,
+file-mode rejection, and creation-only pushes. CI runs them on Linux, Windows,
 and macOS and invokes the real read-only action on this repository's PR.
