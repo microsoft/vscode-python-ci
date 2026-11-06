@@ -1,0 +1,29 @@
+name: Get extension version
+description: Read a validated SemVer version from a package.json without modifying it.
+
+inputs:
+  package-json-path:
+    description: Manifest path, absolute or relative to the caller's workspace.
+    default: package.json
+
+outputs:
+  version:
+    description: The manifest's version, unchanged.
+    value: ${{ steps.read.outputs.version }}
+
+runs:
+  using: composite
+  steps:
+    - name: Set up tooling Python
+      uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+      with:
+        python-version: "3.13"
+    - name: Read the extension version
+      id: read
+      shell: bash
+      working-directory: ${{ github.workspace }}
+      env:
+        ACTION_PATH: ${{ github.action_path }}
+        PACKAGE_JSON_PATH: ${{ inputs.package-json-path }}
+      run: |
+        python "$ACTION_PATH/scripts/extension_version.py"

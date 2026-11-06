@@ -3,10 +3,14 @@ name: Validate release PR action
 on:
   push:
     paths:
+      - actions/get-extension-version/**
+      - actions/get-extension-next-version/**
       - actions/release-pr/**
       - .github/workflows/smoke-release-pr-action.yml
   pull_request:
     paths:
+      - actions/get-extension-version/**
+      - actions/get-extension-next-version/**
       - actions/release-pr/**
       - .github/workflows/smoke-release-pr-action.yml
   workflow_dispatch:
@@ -25,8 +29,51 @@ jobs:
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.13"
-      - name: Run release PR tests
-        run: python -m unittest discover -s actions/release-pr/tests -v
+      - name: Run version and release PR tests
+        run: |
+          python -m unittest discover -s actions/get-extension-next-version/tests -v
+          python -m unittest discover -s actions/release-pr/tests -v
+
+  version-smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Prepare consumer manifests without checking out the action repository
+        shell: bash
+        run: |
+          printf '{"version":"2026.9.7-dev+build"}\n' > package.json
+          mkdir -p "version action fixture"
+          cp package.json "version action fixture/package.json"
+      - name: Read the default manifest
+        id: current
+        uses: $/actions/get-extension-version
+      - name: Calculate the next prerelease from a relative path
+        id: next
+        uses: $/actions/get-extension-next-version
+        with:
+          package-json-path: version action fixture/package.json
+          type: pre-release
+          strategy: odd-even-minor
+          pre-release-suffix: dev
+      - name: Calculate the previous release from an absolute path
+        id: previous
+        uses: $/actions/get-extension-next-version
+        with:
+          package-json-path: ${{ github.workspace }}/version action fixture/package.json
+          type: release
+          strategy: odd-even-minor
+          direction: previous
+      - name: Verify outputs and unchanged manifests
+        shell: bash
+        env:
+          CURRENT: ${{ steps.current.outputs.version }}
+          NEXT: ${{ steps.next.outputs.version }}
+          PREVIOUS: ${{ steps.previous.outputs.version }}
+        run: |
+          test "$CURRENT" = "2026.9.7-dev+build"
+          test "$NEXT" = "2026.11.0-dev"
+          test "$PREVIOUS" = "2026.8.0"
+          test "$(cat package.json)" = '{"version":"2026.9.7-dev+build"}'
+          cmp -- package.json "version action fixture/package.json"
 
   smoke:
     if: github.event_name == 'pull_request'
@@ -35,7 +82,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Smoke test read-only action on this repository's PR
         id: plan
-        uses: ./actions/release-pr
+        uses: $/actions/release-pr
         with:
           mode: plan
       - name: Confirm this engineering PR is not an extension release

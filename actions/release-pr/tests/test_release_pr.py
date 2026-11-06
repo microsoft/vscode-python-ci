@@ -12,6 +12,8 @@ import unittest
 from pathlib import Path
 
 ACTION = Path(__file__).resolve().parents[1]
+GETTER = ACTION.parent / "get-extension-version"
+CALCULATOR = ACTION.parent / "get-extension-next-version"
 SPEC = importlib.util.spec_from_file_location(
     "release_pr", ACTION / "scripts" / "release_pr.py"
 )
@@ -23,9 +25,9 @@ def manifest(version, **values):
     return json.dumps({"name": "extension", "version": version, **values})
 
 
-def yaml_command(name):
+def yaml_command(name, action=ACTION):
     step = (
-        (ACTION / "action.yml")
+        (action / "action.yml")
         .read_text(encoding="utf-8")
         .split(f"    - name: {name}\n", 1)[1]
         .split("    - name:", 1)[0]
@@ -37,7 +39,7 @@ class ValidationTests(unittest.TestCase):
     def test_only_top_level_version_may_change(self):
         before = '{"version":"1.43.0","nested":{"version":"keep","x":[true,1]}}'
         after = '{"nested":{"x":[true,1.0],"version":"keep"},"version":"1.45.0"}'
-        self.assertEqual(release.validate_change(before, after), ("1.45.0", "1.44.0"))
+        self.assertEqual(release.validate_change(before, after), "1.45.0")
         for values in (
             '{"version":"changed","x":[true,1]}',
             '{"version":"keep","x":[1,1]}',
@@ -48,16 +50,16 @@ class ValidationTests(unittest.TestCase):
                     before, '{"version":"1.45.0","nested":' + values + "}"
                 )
 
-    def test_version_upgrade_and_stable_derivation(self):
-        for before, after, stable in (
-            ("2026.7.0-dev", "2026.9.0-dev", "2026.8.0"),
-            ("1.43.0", "1.45.0", "1.44.0"),
-            ("1.45.0-rc.9", "1.45.0-rc.10", "1.44.0"),
+    def test_version_upgrade_rules(self):
+        for before, after in (
+            ("2026.7.0-dev", "2026.9.0-dev"),
+            ("1.43.0", "1.49.0"),
+            ("1.45.0-rc.9", "1.45.0-rc.10"),
         ):
             with self.subTest(after=after):
                 self.assertEqual(
                     release.validate_change(manifest(before), manifest(after)),
-                    (after, stable),
+                    after,
                 )
         for after in ("1.41.0", "1.44.0", "1.43.0+build", "invalid"):
             with self.subTest(after=after), self.assertRaises(ValueError):
@@ -148,7 +150,7 @@ class GitWorkflowTests(unittest.TestCase):
         self.git("push", "origin", "main")
         return self.git("rev-parse", "HEAD")
 
-    def step(self, name):
+    def step(self, name, action=ACTION):
         output = self.root / "outputs"
         output.write_text("", encoding="utf-8")
         result = subprocess.run(
@@ -160,10 +162,14 @@ class GitWorkflowTests(unittest.TestCase):
                 "-o",
                 "pipefail",
                 "-c",
-                yaml_command(name),
+                yaml_command(name, action),
             ],
             cwd=self.work,
-            env={**self.environment, "GITHUB_OUTPUT": output.as_posix()},
+            env={
+                **self.environment,
+                "ACTION_PATH": action.as_posix(),
+                "GITHUB_OUTPUT": output.as_posix(),
+            },
             capture_output=True,
             text=True,
             check=False,
@@ -177,7 +183,7 @@ class GitWorkflowTests(unittest.TestCase):
 
     def run_action(self, mode, source):
         self.git("checkout", "--detach", source)
-        self.environment.update(BASE_SHA=self.base, RELEASE_MODE=mode)
+        self.environment.update(BASE_SHA=self.base)
         self.step("Fetch the recorded base")
         if self.step("Check for a manifest-only change")["changed"] == "false":
             return None
@@ -185,13 +191,29 @@ class GitWorkflowTests(unittest.TestCase):
         self.step("Find the comparison base")
         self.step("Read the base manifest")
         self.step("Read the source manifest")
-        version = self.step("Validate and prepare the manifest").get("version")
-        if mode == "release" and version:
-            self.environment["VERSION"] = version
+        version = self.step("Validate the manifest change").get("version")
+        if not version:
+            return None
+        self.environment["PACKAGE_JSON_PATH"] = (
+            self.snapshots / "release-pr.after.json"
+        ).as_posix()
+        self.environment["CURRENT_VERSION"] = self.step(
+            "Read the extension version", GETTER
+        )["version"]
+        self.environment.update(
+            VERSION_TYPE="release",
+            VERSION_STRATEGY="odd-even-minor",
+            VERSION_DIRECTION="previous",
+            PRE_RELEASE_SUFFIX="",
+        )
+        stable = self.step("Calculate the extension version", CALCULATOR)["version"]
+        if mode == "release":
+            self.environment["VERSION"] = stable
+            self.step("Prepare the stable manifest")
             self.step("Stage the stable manifest")
             self.step("Commit the stable manifest")
             self.step("Push the finished release branch")
-        return version
+        return stable if mode == "release" else version
 
     def test_plan_is_read_only_and_release_preserves_merged_source(self):
         self.assertEqual(self.run_action("plan", self.head), "1.45.0")

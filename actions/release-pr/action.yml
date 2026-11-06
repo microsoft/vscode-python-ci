@@ -12,7 +12,7 @@ inputs:
 outputs:
   version:
     description: Validated development version in plan mode, stable version in release mode; empty for ordinary PRs.
-    value: ${{ steps.validate.outputs.version }}
+    value: ${{ inputs.mode == 'release' && steps.stable.outputs.version || steps.validate.outputs.version }}
 
 runs:
   using: composite
@@ -75,32 +75,48 @@ runs:
       shell: bash
       run: |
         git show HEAD:package.json > "$RUNNER_TEMP/release-pr.after.json"
-    - name: Validate and prepare the manifest
+    - name: Validate the manifest change
       id: validate
       if: steps.files.outputs.changed == 'true'
       shell: bash
       env:
         ACTION_PATH: ${{ github.action_path }}
-        RELEASE_MODE: ${{ inputs.mode }}
       run: |
         python "$ACTION_PATH/scripts/release_pr.py"
+    - name: Calculate the stable version
+      id: stable
+      if: steps.validate.outputs.version != ''
+      uses: $/actions/get-extension-next-version
+      with:
+        package-json-path: ${{ runner.temp }}/release-pr.after.json
+        type: release
+        strategy: odd-even-minor
+        direction: previous
+    - name: Prepare the stable manifest
+      if: inputs.mode == 'release' && steps.stable.outputs.version != ''
+      shell: bash
+      env:
+        ACTION_PATH: ${{ github.action_path }}
+        VERSION: ${{ steps.stable.outputs.version }}
+      run: |
+        python "$ACTION_PATH/scripts/release_pr.py" --release-version "$VERSION"
     - name: Stage the stable manifest
-      if: inputs.mode == 'release' && steps.validate.outputs.version != ''
+      if: inputs.mode == 'release' && steps.stable.outputs.version != ''
       shell: bash
       run: |
         git add -- package.json
     - name: Commit the stable manifest
-      if: inputs.mode == 'release' && steps.validate.outputs.version != ''
+      if: inputs.mode == 'release' && steps.stable.outputs.version != ''
       shell: bash
       env:
-        VERSION: ${{ steps.validate.outputs.version }}
+        VERSION: ${{ steps.stable.outputs.version }}
       run: |
         git -c user.name=github-actions[bot] -c user.email=41898282+github-actions[bot]@users.noreply.github.com -c core.hooksPath=/dev/null commit -m "Release $VERSION"
     - name: Push the finished release branch
-      if: inputs.mode == 'release' && steps.validate.outputs.version != ''
+      if: inputs.mode == 'release' && steps.stable.outputs.version != ''
       shell: bash
       env:
-        VERSION: ${{ steps.validate.outputs.version }}
+        VERSION: ${{ steps.stable.outputs.version }}
       # An empty lease allows creation only, never updating an existing branch.
       run: |
         git push --force-with-lease="refs/heads/release/$VERSION:" origin "HEAD:refs/heads/release/$VERSION"
