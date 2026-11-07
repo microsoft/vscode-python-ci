@@ -1,0 +1,61 @@
+name: Get extension version
+description: Read or calculate a validated SemVer version from a package.json without modifying it.
+
+inputs:
+  package-json-path:
+    description: >-
+      Path to a readable JSON manifest with a top-level SemVer version string.
+      Accepts absolute paths or paths relative to the caller's workspace, including spaces.
+    default: package.json
+  mode:
+    description: >-
+      Allowed values: current, previous, next. current returns the exact manifest version.
+      previous and next select the nearest strictly lower or higher minor for the requested type.
+    default: current
+  type:
+    description: >-
+      Allowed values: pre-release, release. Required in every mode; ignored for current.
+      pre-release selects an odd minor, release selects an even minor.
+    required: true
+  strategy:
+    description: >-
+      Allowed value: odd-even-minor. Required in every mode; ignored for current.
+      Preserves major, selects a minor matching the requested type, and resets patch to zero.
+    required: true
+  pre-release-suffix:
+    description: >-
+      Empty or dot-separated SemVer prerelease identifiers, such as dev or rc.1,
+      without a leading - or build metadata (+). Applied only to calculated pre-release
+      versions; ignored for current or release. Empty produces no suffix.
+    default: ""
+
+outputs:
+  version:
+    description: The unchanged manifest version in current mode, otherwise the calculated version.
+    value: ${{ steps.version.outputs.version }}
+
+runs:
+  using: composite
+  steps:
+    - name: Set up tooling Python
+      uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+      with:
+        python-version: "3.13"
+    - name: Get the extension version
+      id: version
+      shell: bash
+      working-directory: ${{ github.workspace }}
+      env:
+        ACTION_PATH: ${{ github.action_path }}
+        PACKAGE_JSON_PATH: ${{ inputs.package-json-path }}
+        VERSION_MODE: ${{ inputs.mode }}
+        VERSION_TYPE: ${{ inputs.type }}
+        VERSION_STRATEGY: ${{ inputs.strategy }}
+        PRE_RELEASE_SUFFIX: ${{ inputs.pre-release-suffix }}
+      run: |
+        python "$ACTION_PATH/scripts/extension_version.py" \
+          --package-json-path="$PACKAGE_JSON_PATH" \
+          --mode="$VERSION_MODE" \
+          --type="$VERSION_TYPE" \
+          --strategy="$VERSION_STRATEGY" \
+          --pre-release-suffix="$PRE_RELEASE_SUFFIX"
