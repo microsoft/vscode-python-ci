@@ -119,7 +119,13 @@ class GitWorkflowTests(unittest.TestCase):
         self.git("push", "origin", "main", "proposal")
         git_path = Path(shutil.which("git"))
         self.bash = (
-            str(git_path.parents[1] / "bin" / "bash.exe")
+            str(
+                next(
+                    parent / "bin" / "bash.exe"
+                    for parent in git_path.parents
+                    if (parent / "bin" / "bash.exe").is_file()
+                )
+            )
             if os.name == "nt"
             else shutil.which("bash")
         )
