@@ -244,6 +244,34 @@ class GitWorkflowTests(unittest.TestCase):
         self.assertEqual(self.git(*remote, "rev-parse", ref), self.base)
         self.assertEqual(self.git(*remote, "rev-parse", "main"), merged)
 
+    def test_existing_identical_release_branch_fails(self):
+        merged = self.merge()
+        self.assertEqual(self.run_action("release", merged), "1.44.0")
+        remote = ("--git-dir", str(self.remote))
+        ref = "refs/heads/release/1.44.0"
+        prepared = self.git("rev-parse", "HEAD")
+        self.assertEqual(self.git(*remote, "rev-parse", ref), prepared)
+        with self.assertRaisesRegex(RuntimeError, "Release branch already exists"):
+            self.step("Push the finished release branch")
+        self.assertEqual(self.git(*remote, "rev-parse", ref), prepared)
+        self.assertEqual(self.git(*remote, "rev-parse", "main"), merged)
+
+    def test_plan_rejects_lossy_serialization_without_writing(self):
+        before = '{"version":"1.43.0","x":1.000000000000000000001}'
+        after = before.replace("1.43.0", "1.45.0")
+        self.git("checkout", "-b", "precision")
+        self.base = self.commit({"package.json": before})
+        head = self.commit({"package.json": after})
+        self.git("push", "origin", "precision")
+        with self.assertRaisesRegex(RuntimeError, "Serializing package.json"):
+            self.run_action("plan", head)
+        self.assertEqual(self.git("rev-parse", "HEAD"), head)
+        self.assertEqual(self.git("status", "--porcelain"), "")
+        self.assertEqual(
+            (self.work / "package.json").read_text(encoding="utf-8"), after
+        )
+        self.assertEqual((self.root / "outputs").read_text(encoding="utf-8"), "")
+
     def test_mixed_file_rebase_skips_before_json_comparison(self):
         self.git("checkout", "proposal")
         self.commit({Path("api") / "package.json": manifest("1.0.0")})

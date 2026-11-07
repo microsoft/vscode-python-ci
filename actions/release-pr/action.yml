@@ -123,4 +123,10 @@ runs:
         VERSION: ${{ steps.stable.outputs.version }}
       # An empty lease allows creation only, never updating an existing branch.
       run: |
-        git push --force-with-lease="refs/heads/release/$VERSION:" origin "HEAD:refs/heads/release/$VERSION"
+        result=$(git push --porcelain --force-with-lease="refs/heads/release/$VERSION:" origin "HEAD:refs/heads/release/$VERSION")
+        printf '%s\n' "$result"
+        # Git bypasses the lease check for an already up-to-date ref.
+        if grep -q '^=' <<< "$result"; then
+          echo "Release branch already exists" >&2
+          exit 1
+        fi

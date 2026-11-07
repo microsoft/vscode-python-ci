@@ -74,7 +74,8 @@ def main():
         if args.release_version is not None:
             version = args.release_version
             version_key(version)
-            text = serialize_release(after, version)
+        text = serialize_release(after, version)
+        if args.release_version is not None:
             Path("package.json").write_text(text, encoding="utf-8")
         output_version(version)
         return 0

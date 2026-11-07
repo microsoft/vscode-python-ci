@@ -26,6 +26,8 @@ The calculator is called only after release classification, with `type: release`
 does not constrain the submitted development bump: larger valid jumps remain
 accepted. Both plan and release use the same calculation, but plan still returns
 the submitted development version.
+Plan also checks that the manifest can be serialized losslessly, without
+writing it, so serialization failures are caught before merge.
 
 Other diffs, and single-manifest PRs with no version change, succeed with no
 output. A version bump mixed with other files is intentionally not classified
@@ -54,7 +56,9 @@ other JSON values are preserved. Release major/minor must fit Marketplace's
 `0..2147483647` bounds.
 
 The push uses an empty lease, allowing creation only. **Existing branches fail,
-even on retries**; there is no branch reconciliation or overwrite. The target
+even on retries**; there is no branch reconciliation or overwrite. Up-to-date
+pushes are also rejected when the release ref already equals the prepared commit.
+The target
 branch is never pushed. No checked-out PR scripts are executed, and commit hooks
 are disabled. This action uses event snapshots, not live API state or plan artifacts.
 
