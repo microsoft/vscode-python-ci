@@ -13,7 +13,6 @@ from pathlib import Path
 
 ACTION = Path(__file__).resolve().parents[1]
 GETTER = ACTION.parent / "get-extension-version"
-CALCULATOR = ACTION.parent / "get-extension-next-version"
 SPEC = importlib.util.spec_from_file_location(
     "release_pr", ACTION / "scripts" / "release_pr.py"
 )
@@ -197,16 +196,13 @@ class GitWorkflowTests(unittest.TestCase):
         self.environment["PACKAGE_JSON_PATH"] = (
             self.snapshots / "release-pr.after.json"
         ).as_posix()
-        self.environment["CURRENT_VERSION"] = self.step(
-            "Read the extension version", GETTER
-        )["version"]
         self.environment.update(
             VERSION_TYPE="release",
             VERSION_STRATEGY="odd-even-minor",
-            VERSION_DIRECTION="previous",
+            VERSION_MODE="previous",
             PRE_RELEASE_SUFFIX="",
         )
-        stable = self.step("Calculate the extension version", CALCULATOR)["version"]
+        stable = self.step("Get the extension version", GETTER)["version"]
         if mode == "release":
             self.environment["VERSION"] = stable
             self.step("Prepare the stable manifest")

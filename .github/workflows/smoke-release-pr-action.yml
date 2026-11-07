@@ -4,13 +4,11 @@ on:
   push:
     paths:
       - actions/get-extension-version/**
-      - actions/get-extension-next-version/**
       - actions/release-pr/**
       - .github/workflows/smoke-release-pr-action.yml
   pull_request:
     paths:
       - actions/get-extension-version/**
-      - actions/get-extension-next-version/**
       - actions/release-pr/**
       - .github/workflows/smoke-release-pr-action.yml
   workflow_dispatch:
@@ -31,7 +29,7 @@ jobs:
           python-version: "3.13"
       - name: Run version and release PR tests
         run: |
-          python -m unittest discover -s actions/get-extension-next-version/tests -v
+          python -m unittest discover -s actions/get-extension-version/tests -v
           python -m unittest discover -s actions/release-pr/tests -v
 
   version-smoke:
@@ -46,22 +44,26 @@ jobs:
       - name: Read the default manifest
         id: current
         uses: $/actions/get-extension-version
+        with:
+          type: pre-release
+          strategy: odd-even-minor
       - name: Calculate the next prerelease from a relative path
         id: next
-        uses: $/actions/get-extension-next-version
+        uses: $/actions/get-extension-version
         with:
           package-json-path: version action fixture/package.json
+          mode: next
           type: pre-release
           strategy: odd-even-minor
           pre-release-suffix: dev
       - name: Calculate the previous release from an absolute path
         id: previous
-        uses: $/actions/get-extension-next-version
+        uses: $/actions/get-extension-version
         with:
           package-json-path: ${{ github.workspace }}/version action fixture/package.json
           type: release
           strategy: odd-even-minor
-          direction: previous
+          mode: previous
       - name: Verify outputs and unchanged manifests
         shell: bash
         env:

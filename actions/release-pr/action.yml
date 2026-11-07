@@ -3,10 +3,14 @@ description: Validate a package.json version upgrade and create its stable relea
 
 inputs:
   mode:
-    description: plan validates an open PR; release revalidates the merged change and publishes a branch.
+    description: >-
+      Allowed values: plan, release. plan validates an open pull_request without creating a branch.
+      release revalidates a merged, closed PR and creates its stable release branch.
     required: true
   token:
-    description: Checkout token; release requires contents write permission.
+    description: >-
+      GitHub access token for checkout and branch creation.
+      Requires contents read permission for plan or contents write permission for release.
     default: ${{ github.token }}
 
 outputs:
@@ -86,12 +90,12 @@ runs:
     - name: Calculate the stable version
       id: stable
       if: steps.validate.outputs.version != ''
-      uses: $/actions/get-extension-next-version
+      uses: $/actions/get-extension-version
       with:
         package-json-path: ${{ runner.temp }}/release-pr.after.json
         type: release
         strategy: odd-even-minor
-        direction: previous
+        mode: previous
     - name: Prepare the stable manifest
       if: inputs.mode == 'release' && steps.stable.outputs.version != ''
       shell: bash

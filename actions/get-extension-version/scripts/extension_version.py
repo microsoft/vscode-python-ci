@@ -1,6 +1,7 @@
 # Copyright (c) Microsoft Corporation. All rights reserved.
 # Licensed under the MIT License.
 
+import argparse
 import json
 import os
 import string
@@ -84,6 +85,37 @@ def read_version(path):
     return version
 
 
+def calculate_version(version, version_type, strategy, mode, pre_release_suffix=""):
+    if version_type not in {"pre-release", "release"}:
+        raise ValueError("type must be pre-release or release")
+    if strategy != "odd-even-minor":
+        raise ValueError("strategy must be odd-even-minor")
+    if mode not in {"next", "previous"}:
+        raise ValueError("Calculation mode must be next or previous")
+    (major, minor, _), _, _ = version_key(version)
+    target_parity = 1 if version_type == "pre-release" else 0
+    step = 1 if mode == "next" else -1
+    minor += step
+    if minor % 2 != target_parity:
+        minor += step
+    if not (
+        0 <= major <= MAX_MARKETPLACE_COMPONENT
+        and 0 <= minor <= MAX_MARKETPLACE_COMPONENT
+    ):
+        raise ValueError(
+            f"Result exceeds Marketplace numeric bounds (0..{MAX_MARKETPLACE_COMPONENT})"
+        )
+    result = f"{major}.{minor}.0"
+    if version_type == "pre-release" and pre_release_suffix:
+        if pre_release_suffix.startswith("-") or "+" in pre_release_suffix:
+            raise ValueError(
+                "pre-release-suffix must omit the leading - and build metadata"
+            )
+        result += f"-{pre_release_suffix}"
+    version_key(result)
+    return result
+
+
 def output_version(version):
     if os.environ.get("GITHUB_OUTPUT"):
         with Path(os.environ["GITHUB_OUTPUT"]).open("a", encoding="utf-8") as output:
@@ -91,5 +123,49 @@ def output_version(version):
     print(version)
 
 
+def main():
+    parser = argparse.ArgumentParser(
+        description="Read or calculate an extension version."
+    )
+    parser.add_argument(
+        "--package-json-path", default="package.json", help="Manifest path."
+    )
+    parser.add_argument(
+        "--mode", choices=("current", "previous", "next"), default="current"
+    )
+    parser.add_argument(
+        "--type",
+        dest="version_type",
+        choices=("pre-release", "release"),
+        required=True,
+        help="Required in every mode; ignored for current.",
+    )
+    parser.add_argument(
+        "--strategy",
+        choices=("odd-even-minor",),
+        required=True,
+        help="Required in every mode; ignored for current.",
+    )
+    parser.add_argument(
+        "--pre-release-suffix",
+        default="",
+        help="Prerelease identifiers, e.g. dev or rc.1; ignored for current/release.",
+    )
+    args = parser.parse_args()
+    version = read_version(args.package_json_path)
+    if args.mode != "current":
+        try:
+            version = calculate_version(
+                version,
+                args.version_type,
+                args.strategy,
+                args.mode,
+                args.pre_release_suffix,
+            )
+        except ValueError as exc:
+            parser.error(str(exc))
+    output_version(version)
+
+
 if __name__ == "__main__":
-    output_version(read_version(os.environ.get("PACKAGE_JSON_PATH", "package.json")))
+    main()

@@ -2,8 +2,7 @@
 
 One composite action, two modes, one manifest (`package.json`), and one output
 (`version`). Git operations and the sole-file gate are short YAML steps.
-Python compares the exported JSON snapshots and validates versions, then
-[get-extension-next-version](../get-extension-next-version/README.md) calls
+Python compares the exported JSON snapshots and validates versions, then uses
 [get-extension-version](../get-extension-version/README.md) to derive the
 previous stable version from the validated source snapshot. In release mode,
 Python revalidates the snapshots and writes the calculated stable manifest.
@@ -23,7 +22,7 @@ Build metadata alone is not an upgrade. There is no old-minor-plus-two rule or
 automatic calendar rollover.
 
 The calculator is called only after release classification, with `type: release`,
-`strategy: odd-even-minor`, and `direction: previous`. Its prerelease calculation
+`strategy: odd-even-minor`, and `mode: previous`. Its prerelease calculation
 does not constrain the submitted development bump: larger valid jumps remain
 accepted. Both plan and release use the same calculation, but plan still returns
 the submitted development version.
@@ -139,13 +138,13 @@ performed by the local tests.
 
 ```sh
 python -m unittest discover -s actions/release-pr/tests -v
-python -m unittest discover -s actions/get-extension-next-version/tests -v
+python -m unittest discover -s actions/get-extension-version/tests -v
 ```
 
 Focused tests cover version-only JSON changes, upgrade rules, ordinary PRs, and
 lossless release serialization. A small local Git fixture executes the actual
 YAML commands for plan/release behavior, whole-change gating after a rebase,
-file-mode rejection, creation-only pushes, and the getter/calculator commands.
-The version-action suite covers their standalone contracts. CI runs both suites
+file-mode rejection, creation-only pushes, and the version-action command.
+The version-action suite covers its standalone contract. CI runs both suites
 on Linux, Windows, and macOS, invokes the real read-only release action on this
-repository's PR, and smoke-tests the version actions with no repository checkout.
+repository's PR, and smoke-tests all version modes with no repository checkout.

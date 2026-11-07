@@ -32,16 +32,15 @@ coverage; it does not detect duplicates.
 
 ## Repository contents
 
-| Path                                                                                               | Purpose                                                                     |
-| -------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------- |
-| [actions/check-python-versions/](actions/check-python-versions/)                                   | Composite action definition, documentation, and pinned Python dependencies. |
-| [scripts/check_python_versions.py](actions/check-python-versions/scripts/check_python_versions.py) | Release lookup, workflow matrix checks, reporting, and issue creation.      |
-| [tests/](actions/check-python-versions/tests/)                                                     | Unit tests and a representative workflow fixture.                           |
-| [smoke-python-versions-action.yml](.github/workflows/smoke-python-versions-action.yml)             | GitHub Actions smoke test and unit-test workflow.                           |
-| [actions/get-extension-version/](actions/get-extension-version/README.md)                          | Read a manifest's validated SemVer version without changing it.             |
-| [actions/get-extension-next-version/](actions/get-extension-next-version/README.md)                | Calculate the next or previous prerelease/stable minor version.             |
-| [actions/release-pr/](actions/release-pr/README.md)                                                | Validate version-only PRs and atomically create stable release branches.    |
-| [smoke-release-pr-action.yml](.github/workflows/smoke-release-pr-action.yml)                       | Cross-platform release-action tests and read-only composite smoke test.     |
+| Path                                                                                               | Purpose                                                                            |
+| -------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------- |
+| [actions/check-python-versions/](actions/check-python-versions/)                                   | Composite action definition, documentation, and pinned Python dependencies.        |
+| [scripts/check_python_versions.py](actions/check-python-versions/scripts/check_python_versions.py) | Release lookup, workflow matrix checks, reporting, and issue creation.             |
+| [tests/](actions/check-python-versions/tests/)                                                     | Unit tests and a representative workflow fixture.                                  |
+| [smoke-python-versions-action.yml](.github/workflows/smoke-python-versions-action.yml)             | GitHub Actions smoke test and unit-test workflow.                                  |
+| [actions/get-extension-version/](actions/get-extension-version/README.md)                          | Read the current version or calculate the next/previous prerelease/stable version. |
+| [actions/release-pr/](actions/release-pr/README.md)                                                | Validate version-only PRs and atomically create stable release branches.           |
+| [smoke-release-pr-action.yml](.github/workflows/smoke-release-pr-action.yml)                       | Cross-platform release-action tests and read-only composite smoke test.            |
 
 ## Local development and validation
 
@@ -51,14 +50,14 @@ version as the action, set up Python 3.13, then run from the repository root:
 ```sh
 python -m pip install -r actions/check-python-versions/requirements.txt
 python -m unittest discover -s actions/check-python-versions/tests -v
-python -m unittest discover -s actions/get-extension-next-version/tests -v
+python -m unittest discover -s actions/get-extension-version/tests -v
 python -m unittest discover -s actions/release-pr/tests -v
 ```
 
 The Python-version tests mock network and issue operations; the release tests
-use temporary local Git repositories. Version helpers use only Python's standard
-library and are tested without modifying their manifests. Nested version/release
-actions require GitHub.com and runner 2.336.0 or newer for `$/` references.
+use temporary local Git repositories. The version action uses only Python's standard
+library and is tested without modifying manifests. The release action's sibling
+reference requires GitHub.com and runner 2.336.0 or newer for `$/` references.
 The Python-version CI workflow also runs
 the composite action in check-only mode against the fixture, using the live
 Python.org API.
