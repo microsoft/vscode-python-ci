@@ -97,6 +97,7 @@ class GitWorkflowTests(unittest.TestCase):
             "GIT_TERMINAL_PROMPT": "0",
             "ACTION_PATH": ACTION.as_posix(),
             "RUNNER_TEMP": self.snapshots.as_posix(),
+            "RELEASE_BRANCH_PREFIX": "release/",
         }
         self.git("init", "--bare", str(self.remote))
         self.git("init", "--initial-branch=main")
@@ -209,8 +210,10 @@ class GitWorkflowTests(unittest.TestCase):
             PRE_RELEASE_SUFFIX="",
         )
         stable = self.step("Get the extension version", GETTER)["version"]
+        self.environment["VERSION"] = stable
+        self.branch = self.step("Determine the release branch")["branch"]
+        self.environment["RELEASE_BRANCH"] = self.branch
         if mode == "release":
-            self.environment["VERSION"] = stable
             self.step("Prepare the stable manifest")
             self.step("Stage the stable manifest")
             self.step("Commit the stable manifest")
@@ -219,6 +222,7 @@ class GitWorkflowTests(unittest.TestCase):
 
     def test_plan_is_read_only_and_release_preserves_merged_source(self):
         self.assertEqual(self.run_action("plan", self.head), "1.45.0")
+        self.assertEqual(self.branch, "release/1.44.0")
         self.assertEqual(self.git("rev-parse", "HEAD"), self.head)
         self.assertEqual(self.git("status", "--porcelain"), "")
         self.assertEqual(
@@ -240,27 +244,75 @@ class GitWorkflowTests(unittest.TestCase):
         self.assertEqual(self.git(*remote, "rev-parse", f"{ref}^"), merged)
         self.assertEqual(self.git(*remote, "rev-parse", "main"), merged)
 
+    def test_custom_prefix_is_reported_in_plan_and_used_for_release(self):
+        self.environment["RELEASE_BRANCH_PREFIX"] = "stable/v"
+        self.assertEqual(self.run_action("plan", self.head), "1.45.0")
+        self.assertEqual(self.branch, "stable/v1.44.0")
+        self.assertEqual(self.git("rev-parse", "HEAD"), self.head)
+        self.assertEqual(self.git("status", "--porcelain"), "")
+        remote = ("--git-dir", str(self.remote))
+        self.assertEqual(self.git(*remote, "for-each-ref", "refs/heads/stable"), "")
+
+        merged = self.merge()
+        self.assertEqual(self.run_action("release", merged), "1.44.0")
+        self.assertEqual(self.branch, "stable/v1.44.0")
+        ref = f"refs/heads/{self.branch}"
+        self.assertEqual(
+            json.loads(self.git(*remote, "show", f"{ref}:package.json")),
+            {**self.package, "version": "1.44.0"},
+        )
+        self.assertEqual(self.git(*remote, "rev-parse", f"{ref}^"), merged)
+        self.assertEqual(self.git(*remote, "rev-parse", "main"), merged)
+        self.assertEqual(self.git(*remote, "for-each-ref", "refs/heads/release"), "")
+
+    def test_invalid_prefix_fails_before_writing_in_both_modes(self):
+        merged = self.merge()
+        remote = ("--git-dir", str(self.remote))
+        refs = self.git(*remote, "show-ref")
+        for prefix in ("bad prefix/", "release/../", "release\n/", "release/:main"):
+            for mode, source in (("plan", self.head), ("release", merged)):
+                with self.subTest(prefix=prefix, mode=mode):
+                    self.environment["RELEASE_BRANCH_PREFIX"] = prefix
+                    with self.assertRaisesRegex(RuntimeError, "Invalid release branch"):
+                        self.run_action(mode, source)
+                    self.assertEqual(self.git("rev-parse", "HEAD"), source)
+                    self.assertEqual(self.git("status", "--porcelain"), "")
+                    self.assertEqual(self.git(*remote, "show-ref"), refs)
+                    self.assertEqual(
+                        (self.root / "outputs").read_text(encoding="utf-8"), ""
+                    )
+
     def test_existing_release_branch_is_never_overwritten(self):
         merged = self.merge()
         remote = ("--git-dir", str(self.remote))
-        ref = "refs/heads/release/1.44.0"
-        self.git(*remote, "update-ref", ref, self.base)
-        with self.assertRaisesRegex(RuntimeError, "Push the finished release branch"):
-            self.run_action("release", merged)
-        self.assertEqual(self.git(*remote, "rev-parse", ref), self.base)
-        self.assertEqual(self.git(*remote, "rev-parse", "main"), merged)
+        for prefix in ("release/", "stable/v"):
+            with self.subTest(prefix=prefix):
+                self.environment["RELEASE_BRANCH_PREFIX"] = prefix
+                ref = f"refs/heads/{prefix}1.44.0"
+                self.git(*remote, "update-ref", ref, self.base)
+                with self.assertRaisesRegex(
+                    RuntimeError, "Push the finished release branch"
+                ):
+                    self.run_action("release", merged)
+                self.assertEqual(self.git(*remote, "rev-parse", ref), self.base)
+                self.assertEqual(self.git(*remote, "rev-parse", "main"), merged)
 
     def test_existing_identical_release_branch_fails(self):
         merged = self.merge()
-        self.assertEqual(self.run_action("release", merged), "1.44.0")
         remote = ("--git-dir", str(self.remote))
-        ref = "refs/heads/release/1.44.0"
-        prepared = self.git("rev-parse", "HEAD")
-        self.assertEqual(self.git(*remote, "rev-parse", ref), prepared)
-        with self.assertRaisesRegex(RuntimeError, "Release branch already exists"):
-            self.step("Push the finished release branch")
-        self.assertEqual(self.git(*remote, "rev-parse", ref), prepared)
-        self.assertEqual(self.git(*remote, "rev-parse", "main"), merged)
+        for prefix in ("release/", "stable/v"):
+            with self.subTest(prefix=prefix):
+                self.environment["RELEASE_BRANCH_PREFIX"] = prefix
+                self.assertEqual(self.run_action("release", merged), "1.44.0")
+                ref = f"refs/heads/{prefix}1.44.0"
+                prepared = self.git("rev-parse", "HEAD")
+                self.assertEqual(self.git(*remote, "rev-parse", ref), prepared)
+                with self.assertRaisesRegex(
+                    RuntimeError, "Release branch already exists"
+                ):
+                    self.step("Push the finished release branch")
+                self.assertEqual(self.git(*remote, "rev-parse", ref), prepared)
+                self.assertEqual(self.git(*remote, "rev-parse", "main"), merged)
 
     def test_plan_rejects_lossy_serialization_without_writing(self):
         before = '{"version":"1.43.0","x":1.000000000000000000001}'
