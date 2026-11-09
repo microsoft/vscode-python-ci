@@ -1,9 +1,21 @@
 # Pylance Engineering
 
 Shared engineering automation for Pylance and related Python extension
-repositories. This repository currently contains a Python-backed composite
-GitHub Action for checking CI Python-version coverage, along with its tests and
-validation workflow.
+repositories. This repository contains Azure Pipelines templates for extension
+packaging, signing, and publishing, plus a Python-backed composite GitHub Action
+for checking CI Python-version coverage.
+
+## Extension release pipelines
+
+The [Azure Pipelines templates](azure-pipelines/README.md) provide stable and
+pre-release entry points imported from Pylance-Eng. They build platform-specific
+VSIX packages, sign them with MicroBuild, and optionally publish to the VS Code
+Marketplace and GitHub. Localization import is also opt-in.
+
+Consumers reference `microsoft/vscode-python-ci` as the `templates` repository
+resource and pin a reviewed commit. These templates still require the existing
+Azure DevOps pools, internal feeds, and authorized service connections; moving
+them here does not move release execution to GitHub Actions.
 
 ## Check CI Python versions
 
@@ -33,6 +45,8 @@ coverage; it does not detect duplicates.
 
 | Path | Purpose |
 |---|---|
+| [azure-pipelines/](azure-pipelines/README.md) | Shared stable and pre-release extension pipeline templates and consumer setup. |
+| [tools/signing/](tools/signing/) | NuGet configuration and MicroBuild signing project for consumer build setup. |
 | [actions/check-python-versions/](actions/check-python-versions/) | Composite action definition, documentation, and pinned Python dependencies. |
 | [scripts/check_python_versions.py](actions/check-python-versions/scripts/check_python_versions.py) | Release lookup, workflow matrix checks, reporting, and issue creation. |
 | [tests/](actions/check-python-versions/tests/) | Unit tests and a representative workflow fixture. |
