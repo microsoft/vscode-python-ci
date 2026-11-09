@@ -7,6 +7,12 @@ inputs:
       Allowed values: plan, release. plan validates an open pull_request without creating a branch.
       release revalidates a merged, closed PR and creates its stable release branch.
     required: true
+  release-branch-prefix:
+    description: >-
+      Prefix prepended to the calculated stable version, for example release/ or stable/v.
+      The resulting refs/heads/<prefix><stable-version> must be a valid Git ref.
+      Used for release candidates in both modes; plan validates and reports the branch without creating it.
+    default: release/
   token:
     description: >-
       GitHub access token for checkout, checking the PR author's repository permission, and branch creation.
@@ -18,6 +24,9 @@ outputs:
   version:
     description: Validated development version in plan mode, stable version in release mode; empty for ordinary PRs.
     value: ${{ inputs.mode == 'release' && steps.stable.outputs.version || steps.validate.outputs.version }}
+  branch:
+    description: Full release branch name in either mode, for example release/2026.8.0; empty for ordinary PRs.
+    value: ${{ steps.branch.outputs.branch }}
 
 runs:
   using: composite
@@ -114,6 +123,20 @@ runs:
         type: release
         strategy: odd-even-minor
         mode: previous
+    - name: Determine the release branch
+      id: branch
+      if: steps.stable.outputs.version != ''
+      shell: bash
+      env:
+        RELEASE_BRANCH_PREFIX: ${{ inputs.release-branch-prefix }}
+        VERSION: ${{ steps.stable.outputs.version }}
+      run: |
+        branch="${RELEASE_BRANCH_PREFIX}${VERSION}"
+        if ! git check-ref-format "refs/heads/$branch"; then
+          echo "Invalid release branch name" >&2
+          exit 1
+        fi
+        echo "branch=$branch" >> "$GITHUB_OUTPUT"
     - name: Prepare the stable manifest
       if: inputs.mode == 'release' && steps.stable.outputs.version != ''
       shell: bash
@@ -138,10 +161,10 @@ runs:
       if: inputs.mode == 'release' && steps.stable.outputs.version != ''
       shell: bash
       env:
-        VERSION: ${{ steps.stable.outputs.version }}
+        RELEASE_BRANCH: ${{ steps.branch.outputs.branch }}
       # An empty lease allows creation only, never updating an existing branch.
       run: |
-        result=$(git push --porcelain --force-with-lease="refs/heads/release/$VERSION:" origin "HEAD:refs/heads/release/$VERSION")
+        result=$(git push --porcelain --force-with-lease="refs/heads/$RELEASE_BRANCH:" origin "HEAD:refs/heads/$RELEASE_BRANCH")
         printf '%s\n' "$result"
         # Git bypasses the lease check for an already up-to-date ref.
         if grep -q '^=' <<< "$result"; then

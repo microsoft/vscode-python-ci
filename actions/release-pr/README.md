@@ -1,8 +1,8 @@
 # Prepare extension releases
 
-One composite action, two modes, one manifest (`package.json`), and one output
-(`version`). Git operations, the sole-file gate, and the author-permission lookup
-are short YAML steps.
+One composite action, two modes, one manifest (`package.json`), and two outputs
+(`version` and `branch`). Git operations and the sole-file gate are short YAML steps.
+The author-permission lookup is also a short YAML step.
 Python compares the exported JSON snapshots and validates versions, then uses
 [get-extension-version](../get-extension-version/README.md) to derive the
 previous stable version from the validated source snapshot. In release mode,
@@ -54,7 +54,7 @@ Additions, deletions, symlinks, and file-mode changes to a sole changed
 against the event's recorded target base. This compares the entire merged
 change, not just its final commit, including multi-commit rebases. Then update
 the parsed manifest, stage it, commit, and push the finished commit directly to
-`release/<stable-version>`.
+`<release-branch-prefix><stable-version>` (by default, `release/<stable-version>`).
 
 Stable versions preserve major, subtract one from minor, set patch to zero, and
 remove prerelease/build metadata:
@@ -73,21 +73,32 @@ other JSON values are preserved. Release major/minor must fit Marketplace's
 The push uses an empty lease, allowing creation only. **Existing branches fail,
 even on retries**; there is no branch reconciliation or overwrite. Up-to-date
 pushes are also rejected when the release ref already equals the prepared commit.
-The target
+The PR's target
 branch is never pushed. No checked-out PR scripts are executed, and commit hooks
 are disabled. Manifest validation uses event snapshots, not plan artifacts;
 author permissions are queried live and rechecked at release time.
 
-## Inputs and output
+## Inputs and outputs
 
-| Input   | Default               | Meaning                                                                                                              |
-| ------- | --------------------- | -------------------------------------------------------------------------------------------------------------------- |
-| `mode`  | Required              | `plan` for an open `pull_request`; `release` for a merged `closed` PR event.                                         |
-| `token` | `${{ github.token }}` | `contents: read` for plan; `contents: write` for release; repository metadata read access for the permission lookup. |
+| Input                   | Default               | Meaning                                                                                  |
+| ----------------------- | --------------------- | ---------------------------------------------------------------------------------------- |
+| `mode`                  | Required              | `plan` for an open `pull_request`; `release` for a merged `closed` PR event.             |
+| `release-branch-prefix` | `release/`            | Prefix prepended to the calculated stable version, for example `release/` or `stable/v`. |
+| `token`                 | `${{ github.token }}` | `contents: read` for plan; `contents: write` for release; repository metadata read access for the permission lookup. |
 
 **`version`** is the validated development version in plan mode, the stable
 version in release mode, and empty for an ordinary PR. Failures return a nonzero
 exit code and no successful action result.
+
+**`branch`** is the full release branch name in both modes, for example
+`release/2026.8.0`, and empty for an ordinary PR. Plan reports the branch without
+creating it. An explicit empty prefix produces just the stable version.
+
+For release candidates, both modes validate the resulting
+`refs/heads/<prefix><stable-version>` with `git check-ref-format` before modifying
+the manifest or creating a commit. Invalid names fail; ordinary PRs still skip.
+The prefix is literal, not a wildcard or template, and version calculation
+cannot be overridden.
 
 All eight Python extensions use their root manifest.
 **Python Environments' `api/package.json` is outside this action** and retains
@@ -131,7 +142,10 @@ jobs:
           mode: release
 ```
 
-Use the same reviewed action SHA in both jobs. The action performs checkout
+Use the same reviewed action SHA and `release-branch-prefix` in both jobs.
+Omit the prefix to keep the default `release/<stable-version>` naming, or set
+`release-branch-prefix: stable/v` to produce, for example, `stable/v2026.8.0`.
+The action performs checkout
 itself; use a dedicated job, since it changes the workspace and release mode
 creates a local commit.
 
@@ -146,14 +160,16 @@ GitHub Enterprise Server is not supported.
 
 Configure **Release PR / Plan** as a required check on the current revision in
 branch protection/rulesets. The action cannot enforce that setting itself.
-The bot must be allowed to create `release/*` refs.
+The bot must be allowed to create refs matching the configured prefix
+(`release/*` by default).
 
 The closed `pull_request_target` event uses the trusted target-branch workflow
 and supports merged fork PRs with a write token. Do not add steps that execute
 checked-out PR code. An internal `pull_request` closed-event caller also works
 with a write token.
 
-Existing Azure pipelines must already trigger on `release/*` and enable
+Existing Azure pipelines must already trigger on the configured branch pattern
+(`release/*` by default) and enable
 publishing in the merged source. GitHub's token normally suppresses subsequent
 GitHub Actions push workflows; Azure is a separate integration. Existing
 approvals and build-number stamping are unchanged. No Azure publishing is
@@ -169,9 +185,10 @@ python -m unittest discover -s actions/get-extension-version/tests -v
 Focused tests cover version-only JSON changes, upgrade rules, ordinary PRs, and
 lossless release serialization. A small local Git fixture executes the actual
 YAML commands for plan/release behavior, whole-change gating after a rebase,
-file-mode rejection, author permissions and fail-closed lookup failures,
-authorization skips for ordinary PRs, creation-only pushes, and the
-version-action command. Local permission lookups are mocked.
+file-mode rejection, configurable branch names, invalid-prefix rejection before
+writes, author permissions and fail-closed lookup failures, authorization skips
+for ordinary PRs, creation-only pushes, and the version-action command. Local
+permission lookups are mocked.
 The version-action suite covers its standalone contract. CI runs both suites
 on Linux, Windows, and macOS, invokes the real read-only release action on this
 repository's PR, verifies the permission endpoint with `github.token`, and
