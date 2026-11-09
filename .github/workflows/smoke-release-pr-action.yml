@@ -83,6 +83,14 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Verify repository permission lookup with the action token
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_HOST: github.com
+          REPOSITORY: ${{ github.repository }}
+          AUTHOR: ${{ github.event.pull_request.user.login }}
+        run: gh api "repos/$REPOSITORY/collaborators/$AUTHOR/permission" --jq .permission
       - name: Smoke test read-only action on this repository's PR
         id: plan
         uses: $/actions/release-pr

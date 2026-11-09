@@ -9,8 +9,9 @@ inputs:
     required: true
   token:
     description: >-
-      GitHub access token for checkout and branch creation.
+      GitHub access token for checkout, checking the PR author's repository permission, and branch creation.
       Requires contents read permission for plan or contents write permission for release.
+      GitHub App and fine-grained tokens also need repository metadata read permission.
     default: ${{ github.token }}
 
 outputs:
@@ -87,6 +88,23 @@ runs:
         ACTION_PATH: ${{ github.action_path }}
       run: |
         python "$ACTION_PATH/scripts/release_pr.py"
+    - name: Check release author permissions
+      if: steps.validate.outputs.version != ''
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.token }}
+        GH_HOST: github.com
+        REPOSITORY: ${{ github.repository }}
+        AUTHOR: ${{ github.event.pull_request.user.login }}
+      run: |
+        permission=$(gh api "repos/$REPOSITORY/collaborators/$AUTHOR/permission" --jq .permission)
+        case "$permission" in
+          write|maintain|admin) ;;
+          *)
+            echo "Release PR author must have write, maintain, or admin repository permission" >&2
+            exit 1
+            ;;
+        esac
     - name: Calculate the stable version
       id: stable
       if: steps.validate.outputs.version != ''
