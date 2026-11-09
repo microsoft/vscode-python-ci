@@ -91,4 +91,7 @@ jobs:
       - name: Confirm this engineering PR is not an extension release
         env:
           VERSION: ${{ steps.plan.outputs.version }}
-        run: test -z "$VERSION"
+          BRANCH: ${{ steps.plan.outputs.branch }}
+        run: |
+          test -z "$VERSION"
+          test -z "$BRANCH"
