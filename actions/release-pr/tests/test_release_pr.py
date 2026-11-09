@@ -97,6 +97,10 @@ class GitWorkflowTests(unittest.TestCase):
             "GIT_TERMINAL_PROMPT": "0",
             "ACTION_PATH": ACTION.as_posix(),
             "RUNNER_TEMP": self.snapshots.as_posix(),
+            "REPOSITORY": "owner/extension",
+            "AUTHOR": "pr-creator",
+            "AUTHOR_PERMISSION": "write",
+            "AUTHOR_API_EXIT_CODE": "0",
             "RELEASE_BRANCH_PREFIX": "release/",
         }
         self.git("init", "--bare", str(self.remote))
@@ -159,6 +163,15 @@ class GitWorkflowTests(unittest.TestCase):
     def step(self, name, action=ACTION):
         output = self.root / "outputs"
         output.write_text("", encoding="utf-8")
+        command = yaml_command(name, action)
+        if name == "Check release author permissions":
+            command = (
+                "gh() {\n"
+                '  printf "%s\\n" "$*" > "$RUNNER_TEMP/author-api-call"\n'
+                '  printf "%s\\n" "$AUTHOR_PERMISSION"\n'
+                '  return "$AUTHOR_API_EXIT_CODE"\n'
+                "}\n" + command
+            )
         result = subprocess.run(
             [
                 self.bash,
@@ -168,7 +181,7 @@ class GitWorkflowTests(unittest.TestCase):
                 "-o",
                 "pipefail",
                 "-c",
-                yaml_command(name, action),
+                command,
             ],
             cwd=self.work,
             env={
@@ -200,6 +213,7 @@ class GitWorkflowTests(unittest.TestCase):
         version = self.step("Validate the manifest change").get("version")
         if not version:
             return None
+        self.step("Check release author permissions")
         self.environment["PACKAGE_JSON_PATH"] = (
             self.snapshots / "release-pr.after.json"
         ).as_posix()
@@ -219,6 +233,58 @@ class GitWorkflowTests(unittest.TestCase):
             self.step("Commit the stable manifest")
             self.step("Push the finished release branch")
         return stable if mode == "release" else version
+
+    def test_release_author_permission_allowlist_and_pr_identity(self):
+        for permission in ("write", "maintain", "admin"):
+            with self.subTest(permission=permission):
+                self.environment["AUTHOR_PERMISSION"] = permission
+                self.step("Check release author permissions")
+                self.assertEqual(
+                    (self.snapshots / "author-api-call").read_text(encoding="utf-8"),
+                    "api repos/owner/extension/collaborators/pr-creator/permission --jq .permission\n",
+                )
+        for permission in ("read", "triage", "none", "", "null", "unknown"):
+            with self.subTest(permission=permission):
+                self.environment["AUTHOR_PERMISSION"] = permission
+                with self.assertRaisesRegex(RuntimeError, "author must have write"):
+                    self.step("Check release author permissions")
+
+    def test_unauthorized_or_failed_lookup_rejects_both_modes_before_writes(self):
+        merged = self.merge()
+        remote = ("--git-dir", str(self.remote))
+        refs = self.git(*remote, "show-ref")
+        for permission, exit_code in (("read", "0"), ("write", "1")):
+            for mode, source in (("plan", self.head), ("release", merged)):
+                with self.subTest(
+                    permission=permission, exit_code=exit_code, mode=mode
+                ):
+                    self.environment.update(
+                        AUTHOR_PERMISSION=permission, AUTHOR_API_EXIT_CODE=exit_code
+                    )
+                    with self.assertRaisesRegex(
+                        RuntimeError, "Check release author permissions"
+                    ):
+                        self.run_action(mode, source)
+                    self.assertEqual(self.git("rev-parse", "HEAD"), source)
+                    self.assertEqual(self.git("status", "--porcelain"), "")
+                    self.assertEqual(self.git(*remote, "show-ref"), refs)
+
+    def test_unchanged_version_skips_authorization(self):
+        self.git("checkout", "proposal")
+        head = self.commit(
+            {
+                "package.json": manifest(
+                    "1.43.0", nested={"version": "keep"}, description="ordinary edit"
+                )
+            }
+        )
+        merged = self.merge()
+        self.environment.update(AUTHOR_PERMISSION="read", AUTHOR_API_EXIT_CODE="1")
+        for mode, source in (("plan", head), ("release", merged)):
+            with self.subTest(mode=mode):
+                self.assertIsNone(self.run_action(mode, source))
+                self.assertFalse((self.snapshots / "author-api-call").exists())
+                self.assertEqual(self.git("status", "--porcelain"), "")
 
     def test_plan_is_read_only_and_release_preserves_merged_source(self):
         self.assertEqual(self.run_action("plan", self.head), "1.45.0")
@@ -331,6 +397,7 @@ class GitWorkflowTests(unittest.TestCase):
         self.assertEqual((self.root / "outputs").read_text(encoding="utf-8"), "")
 
     def test_mixed_file_rebase_skips_before_json_comparison(self):
+        self.environment.update(AUTHOR_PERMISSION="read", AUTHOR_API_EXIT_CODE="1")
         self.git("checkout", "proposal")
         self.commit({Path("api") / "package.json": manifest("1.0.0")})
         self.commit({"package.json": manifest("1.47.0", nested={"version": "keep"})})
@@ -341,6 +408,7 @@ class GitWorkflowTests(unittest.TestCase):
         source = self.git("rev-parse", "HEAD")
         self.assertIsNone(self.run_action("release", source))
         self.assertFalse((self.snapshots / "release-pr.before.json").exists())
+        self.assertFalse((self.snapshots / "author-api-call").exists())
         self.assertEqual(
             self.git(
                 "--git-dir", str(self.remote), "for-each-ref", "refs/heads/release"

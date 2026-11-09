@@ -2,12 +2,13 @@
 
 One composite action, two modes, one manifest (`package.json`), and two outputs
 (`version` and `branch`). Git operations and the sole-file gate are short YAML steps.
+The author-permission lookup is also a short YAML step.
 Python compares the exported JSON snapshots and validates versions, then uses
 [get-extension-version](../get-extension-version/README.md) to derive the
 previous stable version from the validated source snapshot. In release mode,
 Python revalidates the snapshots and writes the calculated stable manifest.
 All Python code uses only the standard library and never invokes Git or GitHub
-APIs.
+APIs. The GitHub CLI performs the permission lookup.
 
 ## Behavior
 
@@ -21,6 +22,20 @@ The new version must be a strictly greater SemVer with a positive odd minor.
 Build metadata alone is not an upgrade. There is no old-minor-plus-two rule or
 automatic calendar rollover.
 
+Release candidates must also be opened by a GitHub user with **write, maintain,
+or admin** access to the target repository. The action checks the PR creator
+(`pull_request.user.login`), not spoofable Git author names/emails, the workflow
+actor, or the person merging the PR. It uses GitHub's
+[repository-permission endpoint](https://docs.github.com/en/rest/collaborators/collaborators#get-repository-permissions-for-a-user);
+custom roles are evaluated through their base permission.
+
+Both modes check current permissions before preparing a stable manifest or
+creating a commit. Read/triage/no access, missing or unexpected permission
+values, and API/authentication failures reject the release candidate. Membership
+in a particular team is not required, and no bot exception is provided.
+Repository write access is the merge-capable role threshold, not an exemption
+from branch protections, required reviews, or other merge requirements.
+
 The calculator is called only after release classification, with `type: release`,
 `strategy: odd-even-minor`, and `mode: previous`. Its prerelease calculation
 does not constrain the submitted development bump: larger valid jumps remain
@@ -31,7 +46,7 @@ writing it, so serialization failures are caught before merge.
 
 Other diffs, and single-manifest PRs with no version change, succeed with no
 output. A version bump mixed with other files is intentionally not classified
-as a release.
+as a release. These ordinary PRs do not perform an author-permission lookup.
 Additions, deletions, symlinks, and file-mode changes to a sole changed
 `package.json` fail. Renames involve another path and skip comparison.
 
@@ -60,7 +75,8 @@ even on retries**; there is no branch reconciliation or overwrite. Up-to-date
 pushes are also rejected when the release ref already equals the prepared commit.
 The PR's target
 branch is never pushed. No checked-out PR scripts are executed, and commit hooks
-are disabled. This action uses event snapshots, not live API state or plan artifacts.
+are disabled. Manifest validation uses event snapshots, not plan artifacts;
+author permissions are queried live and rechecked at release time.
 
 ## Inputs and outputs
 
@@ -68,7 +84,7 @@ are disabled. This action uses event snapshots, not live API state or plan artif
 | ----------------------- | --------------------- | ---------------------------------------------------------------------------------------- |
 | `mode`                  | Required              | `plan` for an open `pull_request`; `release` for a merged `closed` PR event.             |
 | `release-branch-prefix` | `release/`            | Prefix prepended to the calculated stable version, for example `release/` or `stable/v`. |
-| `token`                 | `${{ github.token }}` | `contents: read` for plan; `contents: write` for release.                                |
+| `token`                 | `${{ github.token }}` | `contents: read` for plan; `contents: write` for release; repository metadata read access for the permission lookup. |
 
 **`version`** is the validated development version in plan mode, the stable
 version in release mode, and empty for an ordinary PR. Failures return a nonzero
@@ -133,6 +149,11 @@ The action performs checkout
 itself; use a dedicated job, since it changes the workspace and release mode
 creates a local commit.
 
+GitHub CLI (`gh`) must be available; GitHub-hosted runners include it.
+The default `github.token` provides repository metadata read access. Custom
+GitHub App/fine-grained tokens must also have **Metadata: read**.
+No organization-membership permission is needed.
+
 Nested actions use `$/` sibling references at the same repository/ref as the
 pinned release action. GitHub.com and runner **2.336.0 or newer** are required;
 GitHub Enterprise Server is not supported.
@@ -165,7 +186,10 @@ Focused tests cover version-only JSON changes, upgrade rules, ordinary PRs, and
 lossless release serialization. A small local Git fixture executes the actual
 YAML commands for plan/release behavior, whole-change gating after a rebase,
 file-mode rejection, configurable branch names, invalid-prefix rejection before
-writes, creation-only pushes, and the version-action command.
+writes, author permissions and fail-closed lookup failures, authorization skips
+for ordinary PRs, creation-only pushes, and the version-action command. Local
+permission lookups are mocked.
 The version-action suite covers its standalone contract. CI runs both suites
 on Linux, Windows, and macOS, invokes the real read-only release action on this
-repository's PR, and smoke-tests all version modes with no repository checkout.
+repository's PR, verifies the permission endpoint with `github.token`, and
+smoke-tests all version modes with no repository checkout.
