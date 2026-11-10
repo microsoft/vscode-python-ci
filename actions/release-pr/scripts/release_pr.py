@@ -71,10 +71,16 @@ def main():
         version = validate_change(before, after)
         if version is None:
             return 0
+        source = after
         if args.release_version is not None:
+            source = (directory / "release-pr.merged.json").read_text(encoding="utf-8")
+            if parse_manifest(source)["version"] != version:
+                raise ValueError(
+                    "Merged package.json version does not match the release PR"
+                )
             version = args.release_version
             version_key(version)
-        text = serialize_release(after, version)
+        text = serialize_release(source, version)
         if args.release_version is not None:
             Path("package.json").write_text(text, encoding="utf-8")
         output_version(version)

@@ -50,10 +50,16 @@ as a release. These ordinary PRs do not perform an author-permission lookup.
 Additions, deletions, symlinks, and file-mode changes to a sole changed
 `package.json` fail. Renames involve another path and skip comparison.
 
-**Release:** check out the exact merged commit and reuse the same validation
-against the event's recorded target base. This compares the entire merged
-change, not just its final commit, including multi-commit rebases. Then update
-the parsed manifest, stage it, commit, and push the finished commit directly to
+**Release:** check out the exact merged commit, but classify and validate the
+entire original PR diff using the event's recorded base and PR head. This
+includes all PR commits, including multi-commit rebases, without treating
+unrelated target-branch updates as part of the PR. Both commits are fetched
+explicitly, so the source branch need not still exist.
+
+The merged manifest must be a regular file and its development version must
+match the validated PR version. Then update the parsed **merged** manifest,
+preserving other values integrated from the target branch, stage it, commit,
+and push the finished commit directly to
 `<release-branch-prefix><stable-version>` (by default, `release/<stable-version>`).
 
 Stable versions preserve major, subtract one from minor, set patch to zero, and
@@ -80,10 +86,10 @@ author permissions are queried live and rechecked at release time.
 
 ## Inputs and outputs
 
-| Input                   | Default               | Meaning                                                                                  |
-| ----------------------- | --------------------- | ---------------------------------------------------------------------------------------- |
-| `mode`                  | Required              | `plan` for an open `pull_request`; `release` for a merged `closed` PR event.             |
-| `release-branch-prefix` | `release/`            | Prefix prepended to the calculated stable version, for example `release/` or `stable/v`. |
+| Input                   | Default               | Meaning                                                                                                              |
+| ----------------------- | --------------------- | -------------------------------------------------------------------------------------------------------------------- |
+| `mode`                  | Required              | `plan` for an open `pull_request`; `release` for a merged `closed` PR event.                                         |
+| `release-branch-prefix` | `release/`            | Prefix prepended to the calculated stable version, for example `release/` or `stable/v`.                             |
 | `token`                 | `${{ github.token }}` | `contents: read` for plan; `contents: write` for release; repository metadata read access for the permission lookup. |
 
 **`version`** is the validated development version in plan mode, the stable
@@ -184,7 +190,9 @@ python -m unittest discover -s actions/get-extension-version/tests -v
 
 Focused tests cover version-only JSON changes, upgrade rules, ordinary PRs, and
 lossless release serialization. A small local Git fixture executes the actual
-YAML commands for plan/release behavior, whole-change gating after a rebase,
+YAML commands for plan/release behavior, stale-base squash/merge/rebase handling,
+preservation of merged manifest values, merged-version mismatch rejection,
+whole-PR gating after a rebase,
 file-mode rejection, configurable branch names, invalid-prefix rejection before
 writes, author permissions and fail-closed lookup failures, authorization skips
 for ordinary PRs, creation-only pushes, and the version-action command. Local
