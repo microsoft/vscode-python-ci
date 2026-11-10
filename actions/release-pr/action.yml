@@ -50,35 +50,39 @@ runs:
       uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
       with:
         python-version: "3.13"
-    - name: Fetch the recorded base
+    - name: Fetch the recorded PR commits
       shell: bash
       env:
         BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
       run: |
-        git fetch --no-tags origin "$BASE_SHA"
+        git fetch --no-tags origin "$BASE_SHA" "$PR_HEAD_SHA"
     - name: Check for a manifest-only change
       id: files
       shell: bash
       env:
         BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
       run: |
-        files=$(git diff --no-ext-diff --no-renames --name-only "$BASE_SHA...HEAD" --)
+        files=$(git diff --no-ext-diff --no-renames --name-only "$BASE_SHA...$PR_HEAD_SHA" --)
         echo "changed=$([[ "$files" == package.json ]] && echo true || echo false)" >> "$GITHUB_OUTPUT"
     - name: Check manifest file modes
       if: steps.files.outputs.changed == 'true'
       shell: bash
       env:
         BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
       run: |
-        change=$(git diff --no-ext-diff --no-renames --raw "$BASE_SHA...HEAD" -- package.json)
+        change=$(git diff --no-ext-diff --no-renames --raw "$BASE_SHA...$PR_HEAD_SHA" -- package.json)
         [[ "$change" == ":100644 100644 "* || "$change" == ":100755 100755 "* ]]
     - name: Find the comparison base
       if: steps.files.outputs.changed == 'true'
       shell: bash
       env:
         BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
       run: |
-        git merge-base "$BASE_SHA" HEAD > "$RUNNER_TEMP/release-pr.base-sha"
+        git merge-base "$BASE_SHA" "$PR_HEAD_SHA" > "$RUNNER_TEMP/release-pr.base-sha"
     - name: Read the base manifest
       if: steps.files.outputs.changed == 'true'
       shell: bash
@@ -87,8 +91,10 @@ runs:
     - name: Read the source manifest
       if: steps.files.outputs.changed == 'true'
       shell: bash
+      env:
+        PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
       run: |
-        git show HEAD:package.json > "$RUNNER_TEMP/release-pr.after.json"
+        git show "${PR_HEAD_SHA}:package.json" > "$RUNNER_TEMP/release-pr.after.json"
     - name: Validate the manifest change
       id: validate
       if: steps.files.outputs.changed == 'true'
@@ -137,6 +143,13 @@ runs:
           exit 1
         fi
         echo "branch=$branch" >> "$GITHUB_OUTPUT"
+    - name: Read the merged manifest
+      if: inputs.mode == 'release' && steps.stable.outputs.version != ''
+      shell: bash
+      run: |
+        entry=$(git ls-tree HEAD -- package.json)
+        [[ "$entry" == "100644 blob "* || "$entry" == "100755 blob "* ]]
+        git show HEAD:package.json > "$RUNNER_TEMP/release-pr.merged.json"
     - name: Prepare the stable manifest
       if: inputs.mode == 'release' && steps.stable.outputs.version != ''
       shell: bash

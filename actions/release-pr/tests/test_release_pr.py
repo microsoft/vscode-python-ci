@@ -111,7 +111,7 @@ class GitWorkflowTests(unittest.TestCase):
             "version": "1.45.0",
             "nested": {"version": "keep"},
         }
-        self.commit(
+        self.base = self.commit(
             {
                 "package.json": manifest("1.43.0", nested={"version": "keep"}),
                 "README.md": "before",
@@ -120,7 +120,7 @@ class GitWorkflowTests(unittest.TestCase):
         self.git("checkout", "-b", "proposal")
         self.head = self.commit({"package.json": json.dumps(self.package)})
         self.git("checkout", "main")
-        self.base = self.commit({"README.md": "target update"})
+        self.commit({"README.md": "target update"})
         self.git("push", "origin", "main", "proposal")
         git_path = Path(shutil.which("git"))
         self.bash = (
@@ -202,8 +202,10 @@ class GitWorkflowTests(unittest.TestCase):
 
     def run_action(self, mode, source):
         self.git("checkout", "--detach", source)
-        self.environment.update(BASE_SHA=self.base)
-        self.step("Fetch the recorded base")
+        self.environment.update(
+            BASE_SHA=self.base, PR_HEAD_SHA=source if mode == "plan" else self.head
+        )
+        self.step("Fetch the recorded PR commits")
         if self.step("Check for a manifest-only change")["changed"] == "false":
             return None
         self.step("Check manifest file modes")
@@ -228,6 +230,7 @@ class GitWorkflowTests(unittest.TestCase):
         self.branch = self.step("Determine the release branch")["branch"]
         self.environment["RELEASE_BRANCH"] = self.branch
         if mode == "release":
+            self.step("Read the merged manifest")
             self.step("Prepare the stable manifest")
             self.step("Stage the stable manifest")
             self.step("Commit the stable manifest")
@@ -271,7 +274,7 @@ class GitWorkflowTests(unittest.TestCase):
 
     def test_unchanged_version_skips_authorization(self):
         self.git("checkout", "proposal")
-        head = self.commit(
+        self.head = self.commit(
             {
                 "package.json": manifest(
                     "1.43.0", nested={"version": "keep"}, description="ordinary edit"
@@ -280,7 +283,7 @@ class GitWorkflowTests(unittest.TestCase):
         )
         merged = self.merge()
         self.environment.update(AUTHOR_PERMISSION="read", AUTHOR_API_EXIT_CODE="1")
-        for mode, source in (("plan", head), ("release", merged)):
+        for mode, source in (("plan", self.head), ("release", merged)):
             with self.subTest(mode=mode):
                 self.assertIsNone(self.run_action(mode, source))
                 self.assertFalse((self.snapshots / "author-api-call").exists())
@@ -309,6 +312,67 @@ class GitWorkflowTests(unittest.TestCase):
         self.assertEqual(self.git(*remote, "show", f"{ref}:README.md"), "target update")
         self.assertEqual(self.git(*remote, "rev-parse", f"{ref}^"), merged)
         self.assertEqual(self.git(*remote, "rev-parse", "main"), merged)
+
+    def test_squash_release_ignores_unrelated_target_updates(self):
+        self.assertEqual(self.run_action("plan", self.head), "1.45.0")
+        self.git("checkout", "main")
+        self.git("merge", "--squash", "proposal")
+        self.git("commit", "-m", "Squash release PR")
+        merged = self.git("rev-parse", "HEAD")
+        self.git("push", "origin", "main")
+        self.assertEqual(self.run_action("release", merged), "1.44.0")
+        remote = ("--git-dir", str(self.remote))
+        ref = "refs/heads/release/1.44.0"
+        self.assertEqual(self.git(*remote, "rev-parse", f"{ref}^"), merged)
+        self.assertEqual(self.git(*remote, "show", f"{ref}:README.md"), "target update")
+
+    def test_rebased_release_uses_original_pr_diff(self):
+        self.git("checkout", "-b", "rebased-release", "proposal")
+        self.git("rebase", "main")
+        self.git("checkout", "main")
+        self.git("merge", "--ff-only", "rebased-release")
+        merged = self.git("rev-parse", "HEAD")
+        self.git("push", "origin", "main")
+        self.assertEqual(self.run_action("release", merged), "1.44.0")
+        self.assertEqual(self.git("show", "HEAD:README.md"), "target update")
+        self.assertEqual(self.git("rev-parse", "HEAD^"), merged)
+
+    def test_release_preserves_concurrent_target_manifest_changes(self):
+        self.git("checkout", "main")
+        self.commit(
+            {
+                "package.json": manifest(
+                    "1.43.0", nested={"version": "keep"}, dependency="new"
+                )
+            }
+        )
+        with self.assertRaises(subprocess.CalledProcessError):
+            self.git("merge", "--no-ff", "proposal", "-m", "Merge release PR")
+        expected = {**self.package, "dependency": "new"}
+        merged = self.commit({"package.json": json.dumps(expected)})
+        self.git("push", "origin", "main")
+        self.assertEqual(self.run_action("release", merged), "1.44.0")
+        self.assertEqual(
+            json.loads(self.git("show", "HEAD:package.json")),
+            {**expected, "version": "1.44.0"},
+        )
+        self.assertEqual(self.git("rev-parse", "HEAD^"), merged)
+
+    def test_release_rejects_merged_version_mismatch_before_writing(self):
+        self.merge()
+        merged = self.commit(
+            {"package.json": manifest("1.47.0", nested={"version": "keep"})}
+        )
+        self.git("push", "origin", "main")
+        remote = ("--git-dir", str(self.remote))
+        refs = self.git(*remote, "show-ref")
+        with self.assertRaisesRegex(
+            RuntimeError, "Merged package.json version does not match"
+        ):
+            self.run_action("release", merged)
+        self.assertEqual(self.git("rev-parse", "HEAD"), merged)
+        self.assertEqual(self.git("status", "--porcelain"), "")
+        self.assertEqual(self.git(*remote, "show-ref"), refs)
 
     def test_custom_prefix_is_reported_in_plan_and_used_for_release(self):
         self.environment["RELEASE_BRANCH_PREFIX"] = "stable/v"
@@ -400,7 +464,10 @@ class GitWorkflowTests(unittest.TestCase):
         self.environment.update(AUTHOR_PERMISSION="read", AUTHOR_API_EXIT_CODE="1")
         self.git("checkout", "proposal")
         self.commit({Path("api") / "package.json": manifest("1.0.0")})
-        self.commit({"package.json": manifest("1.47.0", nested={"version": "keep"})})
+        self.head = self.commit(
+            {"package.json": manifest("1.47.0", nested={"version": "keep"})}
+        )
+        self.git("push", "origin", "proposal")
         self.git("rebase", "main")
         self.git("checkout", "main")
         self.git("merge", "--ff-only", "proposal")
