@@ -56,6 +56,8 @@ Identity comes from `package.json`: `<publisher>.<name>`. English is submitted t
 `src/en/<publisher>.<name>/<publisher>.<name>-new.xlf` on the existing configured
 branch. A clean checkout on that branch is required. Only that extension's XLF
 is staged; unchanged XLF succeeds without a commit.
+If an earlier push failed, rerunning submission publishes the pending commit
+instead of reporting a synchronized no-op.
 
 Submissions use normal pushes, never force pushes. Concurrent updates allow up to
 three push attempts with pull/rebase. The default flow does not modify `main`.
@@ -95,6 +97,9 @@ map to `zh-cn` and `zh-tw`.
 Missing, empty, malformed, duplicate, or incomplete handbacks fail. Runtime
 extensions require both manifest and runtime tables. Untranslated strings and
 wholly untranslated tables are allowed; English fallback is intentional.
+When every target in a validated table is omitted, its generated JSON may be
+`{}` so the extension uses its English fallback. Empty output for a table with
+target elements still fails.
 All handbacks and generated JSON are validated in a new staging directory outside
 the extension before generated locale files are copied. Imports never submit
 English or change tracked English `package.nls.json`.
@@ -134,10 +139,12 @@ These smoke tests use synthetic handbacks, verify all locales and English
 fallback, require npm-feed access, and never authenticate or write to a live drop.
 CI runs both suites on Linux and Windows with Python 3.10 and 3.13.
 
-The helper and original regression tests are ported unchanged from
+The helper and original regression tests were ported from
 `microsoft/vscode-common-python-lsp@6b4a3573e7e7a9fe1e468e129544432278aec2d6`.
 The composite action changes only the relative helper lookup for its new location.
-Dependency pins and localization behavior are preserved.
+Review fixes resolve relative handback paths, support all-omitted-target fallback,
+and resume unpublished submissions after a failed push. Action inputs, defaults,
+dependency pins, and CLI arguments remain unchanged.
 
 Before migrating a caller, verify GitHub and Azure access to this repository.
 Update its GitHub action and stable/pre-release Azure tooling references to the

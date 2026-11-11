@@ -63,10 +63,12 @@ def run_cli(root: pathlib.Path, *arguments: str) -> None:
     subprocess.run([executable, "--yes", CLI, *arguments], cwd=root, check=True)
 
 
-def read_table(path: pathlib.Path, *, comments: bool = False) -> dict:
-    """Read a nonempty string table, optionally allowing export message metadata."""
+def read_table(
+    path: pathlib.Path, *, comments: bool = False, allow_empty: bool = False
+) -> dict:
+    """Read a string table, optionally allowing export metadata or empty handbacks."""
     table = json.loads(path.read_text(encoding="utf-8-sig"))
-    if not isinstance(table, dict) or not table:
+    if not isinstance(table, dict) or (not table and not allow_empty):
         raise ValueError(f"Invalid or empty localization table: {path}")
     for value in table.values():
         if comments and isinstance(value, dict):
@@ -113,10 +115,13 @@ def export_english(
     return xlf
 
 
-def validate_handback(files: list[pathlib.Path], runtime: bool) -> None:
-    """Require complete, nonempty tables while allowing untranslated strings."""
+def validate_handback(
+    files: list[pathlib.Path], runtime: bool
+) -> set[tuple[str, str]]:
+    """Validate all tables and identify those with no target elements."""
     kinds = ("package", "bundle") if runtime else ("package",)
     tables = set()
+    omitted = set()
     for path in files:
         document = ET.parse(path)
         for table in document.findall(".//{*}file"):
@@ -135,6 +140,8 @@ def validate_handback(files: list[pathlib.Path], runtime: bool) -> None:
                 source = unit.find("{*}source")
                 if source is None or not "".join(source.itertext()).strip():
                     raise ValueError(f"Missing English source in {locale}/{kind}")
+            if all(unit.find("{*}target") is None for unit in units):
+                omitted.add(key)
             tables.add(key)
     for locale in LOCALES:
         for kind in kinds:
@@ -142,6 +149,7 @@ def validate_handback(files: list[pathlib.Path], runtime: bool) -> None:
                 raise ValueError(
                     f"Incomplete translation handback: missing {locale}/{kind}"
                 )
+    return omitted
 
 
 def import_translations(
@@ -149,6 +157,7 @@ def import_translations(
 ) -> None:
     """Validate all handbacks in staging before placing any generated locale files."""
     extension_id, runtime = metadata(root)
+    translations = translations.resolve()
     if not translations.is_dir():
         raise FileNotFoundError(
             f"Translated output is unavailable: {translations}. "
@@ -157,14 +166,17 @@ def import_translations(
     files = sorted(translations.rglob(f"{extension_id}-new.xlf"))
     if not files:
         raise FileNotFoundError(f"No {extension_id} handbacks found in {translations}")
-    validate_handback(files, runtime is not None)
+    empty_names = {
+        f"{'package.nls' if kind == 'package' else 'bundle.l10n'}.{locale}.json"
+        for locale, kind in validate_handback(files, runtime is not None)
+    }
     create_staging(root, output)
     run_cli(root, "import-xlf", "-o", str(output), *(str(file) for file in files))
     names = [f"package.nls.{locale}.json" for locale in LOCALES]
     if runtime is not None:
         names.extend(f"bundle.l10n.{locale}.json" for locale in LOCALES)
     for name in names:
-        read_table(output / name)
+        read_table(output / name, allow_empty=name in empty_names)
     if runtime is not None:
         runtime.mkdir(parents=True, exist_ok=True)
     for name in names:
@@ -208,10 +220,13 @@ def submit_english(
     shutil.copyfile(source, destination)
     relative = str(destination.relative_to(drop))
     git(drop, "add", "--", relative)
-    if not git(drop, "diff", "--cached", "--name-only", "--", relative):
+    if git(drop, "diff", "--cached", "--name-only", "--", relative):
+        git(drop, "commit", "-m", f"Update English strings for {extension_id}")
+    elif git(drop, "rev-parse", "HEAD") == git(
+        drop, "rev-parse", f"refs/remotes/origin/{branch}"
+    ):
         print("English localization strings are already up to date.")
         return
-    git(drop, "commit", "-m", f"Update English strings for {extension_id}")
     for attempt in range(3):
         git(drop, "pull", "--rebase", "origin", branch)
         pushed = subprocess.run(

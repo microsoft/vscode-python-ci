@@ -4,6 +4,7 @@
 """Dependency-free localization core and Git submission regression tests."""
 
 import json
+import os
 import pathlib
 import shutil
 import subprocess
@@ -30,6 +31,7 @@ class LocalizationTests(unittest.TestCase):
         self.translations.mkdir()
         self.configure()
         self.bad_json = None
+        self.empty_json = set()
         self.cli = mock.patch.object(localization, "run_cli", side_effect=self.run_cli)
         self.calls = self.cli.start()
         self.addCleanup(self.cli.stop)
@@ -43,7 +45,9 @@ class LocalizationTests(unittest.TestCase):
             '{"description":"English source"}\n', encoding="utf-8"
         )
 
-    def handbacks(self, *, runtime=True, untranslated=None, same=False, state="new"):
+    def handbacks(
+        self, *, runtime=True, untranslated=None, same=False, state="new", omitted=False
+    ):
         extension_id, _ = localization.metadata(self.root)
         files = []
         for locale in localization.LOCALES:
@@ -63,6 +67,8 @@ class LocalizationTests(unittest.TestCase):
                 for index in range(2):
                     unit = ET.SubElement(body, "trans-unit", {"id": str(index)})
                     ET.SubElement(unit, "source").text = f"English {index}"
+                    if omitted:
+                        continue
                     target = ET.SubElement(unit, "target", {"state": state})
                     target.text = (
                         f"English {index}"
@@ -90,7 +96,7 @@ class LocalizationTests(unittest.TestCase):
                 for kind in kinds:
                     name = f"{kind}.{locale}.json"
                     content = json.dumps({"description": f"{locale} translation"})
-                    if name == self.bad_json:
+                    if name == self.bad_json or name in self.empty_json:
                         content = "{}"
                     (output / name).write_text(content, encoding="utf-8-sig")
         else:
@@ -175,6 +181,78 @@ class LocalizationTests(unittest.TestCase):
         localization.import_translations(self.root, self.translations, self.output)
         self.assertEqual(len(list(self.root.glob("package.nls.*.json"))), 14)
         self.assertFalse((self.root / "l10n").exists())
+
+    def test_relative_handback_paths_are_absolute_for_cli(self):
+        self.handbacks()
+        previous = pathlib.Path.cwd()
+        try:
+            os.chdir(self.base)
+            localization.import_translations(
+                self.root, pathlib.Path("handbacks"), self.output
+            )
+        finally:
+            os.chdir(previous)
+        self.assertEqual(
+            self.calls.call_args.args[4:],
+            tuple(str(path) for path in sorted(self.translations.rglob("*.xlf"))),
+        )
+
+    def test_all_omitted_targets_allow_empty_generated_tables(self):
+        for runtime in (False, True):
+            with self.subTest(runtime=runtime):
+                self.configure(runtime="./l10n" if runtime else None)
+                self.handbacks(runtime=runtime, omitted=True)
+                self.empty_json = {
+                    f"{kind}.{locale}.json"
+                    for locale in localization.LOCALES
+                    for kind in (
+                        ("package.nls", "bundle.l10n") if runtime else ("package.nls",)
+                    )
+                }
+                english = (self.root / "package.nls.json").read_bytes()
+                localization.import_translations(
+                    self.root, self.translations, self.base / f"omitted-{runtime}"
+                )
+                for name in self.empty_json:
+                    directory = (
+                        self.root
+                        if name.startswith("package.nls.")
+                        else self.root / "l10n"
+                    )
+                    self.assertEqual(
+                        json.loads((directory / name).read_text(encoding="utf-8-sig")),
+                        {},
+                    )
+                self.assertEqual((self.root / "package.nls.json").read_bytes(), english)
+
+    def test_empty_output_for_a_targeted_table_still_copies_nothing(self):
+        files = self.handbacks(omitted=True)
+        document = ET.parse(files[-1])
+        unit = document.find(".//{*}file[@original='bundle']/{*}body/{*}trans-unit")
+        ET.SubElement(unit, "{urn:oasis:names:tc:xliff:document:1.2}target").text = "Text"
+        document.write(files[-1])
+        self.bad_json = "bundle.l10n.zh-tw.json"
+        with self.assertRaisesRegex(ValueError, "Invalid or empty"):
+            localization.import_translations(self.root, self.translations, self.output)
+        self.assertFalse(list(self.root.glob("package.nls.*.json")))
+        self.assertFalse((self.root / "l10n").exists())
+
+    def test_omitted_targets_still_require_valid_english_sources(self):
+        files = self.handbacks(omitted=True)
+        document = ET.parse(files[0])
+        document.find(".//{*}source").text = ""
+        document.write(files[0])
+        with self.assertRaisesRegex(ValueError, "Missing English source"):
+            localization.import_translations(self.root, self.translations, self.output)
+        self.calls.assert_not_called()
+
+    def test_empty_handbacks_do_not_allow_invalid_json_or_strings(self):
+        table = self.base / "invalid.json"
+        for content in ("[]", '"text"', '{"key":""}', '{"key":1}', "{"):
+            with self.subTest(content=content):
+                table.write_text(content, encoding="utf-8")
+                with self.assertRaises(ValueError):
+                    localization.read_table(table, allow_empty=True)
 
     def test_wholly_untranslated_table_is_allowed(self):
         for kind in ("package", "bundle"):
@@ -388,6 +466,25 @@ class SubmissionTests(unittest.TestCase):
         self.assertEqual(
             self.git("rev-parse", "origin/dev"), self.git("rev-parse", "HEAD")
         )
+
+    def test_failed_push_then_rerun_publishes_existing_commit(self):
+        run = subprocess.run
+
+        def offline(command, **kwargs):
+            if command[:3] == ["git", "push", "origin"]:
+                return subprocess.CompletedProcess(command, 1, "", "Transient failure")
+            return run(command, **kwargs)
+
+        with mock.patch.object(localization.subprocess, "run", side_effect=offline):
+            with self.assertRaises(subprocess.CalledProcessError):
+                self.submit()
+        unpublished = self.git("rev-parse", "HEAD")
+        self.assertNotEqual(unpublished, self.main)
+        self.assertEqual(localization.git(self.remote, "rev-parse", "dev"), self.main)
+        self.submit()
+        self.assertEqual(self.git("rev-parse", "HEAD"), unpublished)
+        self.assertEqual(localization.git(self.remote, "rev-parse", "dev"), unpublished)
+        self.assertEqual(localization.git(self.remote, "rev-parse", "main"), self.main)
 
 
 if __name__ == "__main__":

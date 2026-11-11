@@ -82,7 +82,7 @@ class LocalizationSmokeTests(unittest.TestCase):
                 )
                 for unit in table.findall(".//{*}trans-unit"):
                     source_text = unit.find("{*}source")
-                    if source_text.text == "Keep English":
+                    if source_text.text == "Keep English" or locale == "fr":
                         continue
                     namespace = source_text.tag.removesuffix("source")
                     target = ET.SubElement(unit, f"{namespace}target", {"state": "new"})
@@ -102,20 +102,30 @@ class LocalizationSmokeTests(unittest.TestCase):
             "--operation",
             "import",
             "--translations-root",
-            str(translations),
+            str(translations.relative_to(base)),
         )
         self.assertEqual((root / "package.nls.json").read_bytes(), english)
         self.assertEqual(len(list(root.glob("package.nls.*.json"))), 14)
         for locale in localization.LOCALES:
             prefix = "" if locale == "de" else f"{locale}: "
             self.assertEqual(
-                localization.read_table(root / f"package.nls.{locale}.json"),
-                {"description": f"{prefix}English description"},
+                json.loads(
+                    (root / f"package.nls.{locale}.json").read_text(encoding="utf-8-sig")
+                ),
+                {} if locale == "fr" else {"description": f"{prefix}English description"},
             )
             if runtime:
                 self.assertEqual(
-                    localization.read_table(root / "l10n" / f"bundle.l10n.{locale}.json"),
-                    {key: f"{prefix}{value}" for key, value in runtime_strings.items()},
+                    json.loads(
+                        (root / "l10n" / f"bundle.l10n.{locale}.json").read_text(
+                            encoding="utf-8-sig"
+                        )
+                    ),
+                    {}
+                    if locale == "fr"
+                    else {
+                        key: f"{prefix}{value}" for key, value in runtime_strings.items()
+                    },
                 )
         if not runtime:
             self.assertFalse((root / "l10n").exists())
@@ -132,6 +142,7 @@ class LocalizationSmokeTests(unittest.TestCase):
                 str(output),
                 *arguments,
             ],
+            cwd=root.parent,
             check=True,
         )
 
