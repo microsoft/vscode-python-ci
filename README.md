@@ -3,7 +3,7 @@
 Shared engineering automation for Pylance and related Python extension
 repositories. This repository contains Python-backed composite GitHub Actions
 for checking CI Python-version coverage, reading/calculating extension versions,
-and preparing extension release branches,
+preparing extension release branches, and submitting English localization,
 along with their tests and validation workflows.
 
 ## Check CI Python versions
@@ -30,6 +30,17 @@ complete workflow example, inputs, outputs, supported matrix forms, and failure
 behavior. Issue mode currently creates a new issue on every run with missing
 coverage; it does not detect duplicates.
 
+## Localization
+
+The [localization action](actions/localization/README.md) exports English strings
+and submits changed XLF to the localization repository. Its standalone Python
+helper also imports validated translation handbacks during Azure packaging.
+Pin the GitHub action and Azure tooling resource to the same reviewed commit.
+
+The helper remains at `scripts/localization.py` for compatibility with existing
+shared Azure templates. Caller credentials, extraction sources, and localization
+data remain in their current repositories.
+
 ## Repository contents
 
 | Path                                                                                               | Purpose                                                                            |
@@ -41,6 +52,11 @@ coverage; it does not detect duplicates.
 | [actions/get-extension-version/](actions/get-extension-version/README.md)                          | Read the current version or calculate the next/previous prerelease/stable version. |
 | [actions/release-pr/](actions/release-pr/README.md)                                                | Validate version-only PRs and atomically create stable release branches.           |
 | [smoke-release-pr-action.yml](.github/workflows/smoke-release-pr-action.yml)                       | Cross-platform release-action tests and read-only composite smoke test.            |
+| [actions/localization/](actions/localization/README.md)                                            | English export/submission action and translation-import documentation.             |
+| [scripts/localization.py](scripts/localization.py)                                                 | Shared standalone localization CLI for GitHub Actions and Azure Pipelines.         |
+| [scripts/localization_test.py](scripts/localization_test.py)                                       | Localization regression tests, including local Git submissions.                    |
+| [scripts/localization_smoke_test.py](scripts/localization_smoke_test.py)                           | Opt-in real CLI export/import round trips using synthetic handbacks.               |
+| [smoke-localization-action.yml](.github/workflows/smoke-localization-action.yml)                   | Linux/Windows localization tests and credential-free real CLI validation.          |
 
 ## Local development and validation
 
@@ -52,6 +68,7 @@ python -m pip install -r actions/check-python-versions/requirements.txt
 python -m unittest discover -s actions/check-python-versions/tests -v
 python -m unittest discover -s actions/get-extension-version/tests -v
 python -m unittest discover -s actions/release-pr/tests -v
+python -m unittest discover -s scripts -p "*_test.py" -v
 ```
 
 The Python-version tests mock network and issue operations; the release tests
@@ -61,6 +78,10 @@ reference requires GitHub.com and runner 2.336.0 or newer for `$/` references.
 The Python-version CI workflow also runs
 the composite action in check-only mode against the fixture, using the live
 Python.org API.
+
+Localization supports Python 3.10 or newer and has no third-party Python
+dependencies. Its default tests are offline; set `LOCALIZATION_CLI_SMOKE=1`
+to include the pinned npm CLI round trips run by localization CI.
 
 When changing the action, update its documentation and tests alongside the
 implementation.

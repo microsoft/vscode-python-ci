@@ -1,0 +1,38 @@
+name: Validate localization action
+
+on:
+  push:
+    paths:
+      - actions/localization/**
+      - scripts/localization*.py
+      - .github/workflows/smoke-localization-action.yml
+  pull_request:
+    paths:
+      - actions/localization/**
+      - scripts/localization*.py
+      - .github/workflows/smoke-localization-action.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  tests:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        python: ["3.10", "3.13"]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: ${{ matrix.python }}
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: "22.21.1"
+      - name: Run localization regression tests and real CLI round trips
+        env:
+          LOCALIZATION_CLI_SMOKE: "1"
+          NPM_CONFIG_REGISTRY: https://packagefeedproxy.microsoft.io/npm/
+        run: python -m unittest discover -s scripts -p "*_test.py" -v
