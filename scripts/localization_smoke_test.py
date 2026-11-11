@@ -36,7 +36,10 @@ class LocalizationSmokeTests(unittest.TestCase):
         if runtime:
             package["l10n"] = "./l10n"
         (root / "package.json").write_text(json.dumps(package), encoding="utf-8")
-        english = b'{"description":"English description","fallback":"Keep English"}\n'
+        english = (
+            b'{"description":{"message":"English description",'
+            b'"comment":["Keep command links unchanged"]},"fallback":"Keep English"}\n'
+        )
         (root / "package.nls.json").write_bytes(english)
         source = root / "src"
         source.mkdir()
@@ -65,6 +68,10 @@ class LocalizationSmokeTests(unittest.TestCase):
         document = ET.parse(xlf)
         tables = {table.get("original") for table in document.findall(".//{*}file")}
         self.assertEqual(tables, {"package", "bundle"} if runtime else {"package"})
+        self.assertIn(
+            "Keep command links unchanged",
+            [note.text for note in document.findall(".//{*}note")],
+        )
         if runtime:
             self.assertEqual(
                 localization.read_table(output / "bundle.l10n.json"), runtime_strings

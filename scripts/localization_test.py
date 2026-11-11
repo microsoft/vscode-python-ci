@@ -130,6 +130,32 @@ class LocalizationTests(unittest.TestCase):
         self.assertEqual(self.calls.call_args.args[1], "generate-xlf")
         self.assertFalse((self.output / "bundle.l10n.json").exists())
 
+    def test_manifest_export_preserves_translator_metadata(self):
+        manifest = self.root / "package.nls.json"
+        english = json.dumps(
+            {
+                "description": {
+                    "message": "English description",
+                    "comment": ["Keep command links unchanged"],
+                }
+            }
+        ).encode("utf-8")
+        manifest.write_bytes(english)
+        localization.export_english(self.root, self.output, ["src"])
+        self.assertEqual(manifest.read_bytes(), english)
+        self.assertEqual(self.calls.call_args.args[-1], "package.nls.json")
+
+    def test_manifest_export_rejects_invalid_metadata_messages(self):
+        for value in ({}, {"message": ""}, {"message": " "}, {"message": 1}):
+            with self.subTest(value=value):
+                (self.root / "package.nls.json").write_text(
+                    json.dumps({"description": value}), encoding="utf-8"
+                )
+                with self.assertRaises(ValueError):
+                    localization.export_english(self.root, self.output, ["src"])
+                self.calls.assert_not_called()
+                self.assertFalse(self.output.exists())
+
     def test_missing_source_and_invalid_source_input(self):
         for paths in (["missing"], ["../outside"], [], [1]):
             with self.subTest(paths=paths):

@@ -90,7 +90,7 @@ def export_english(
 ) -> pathlib.Path:
     """Export manifest and declared runtime strings to a new staging directory."""
     extension_id, runtime = metadata(root)
-    read_table(root / "package.nls.json")
+    read_table(root / "package.nls.json", comments=True)
     create_staging(root, output)
     inputs = []
     if runtime is not None:
