@@ -55,6 +55,8 @@ jobs:
           git add .gitmodules
           git update-index --add --cacheinfo "160000,$pinned,external/shared library"
           git -c commit.gpgsign=false commit --quiet -m "Pin shared library"
+          mkdir -p "external/shared library"
+          test -z "$(git status --porcelain)"
           printf 'UPSTREAM=%s\nPINNED=%s\n' "$upstream" "$pinned" >> "$GITHUB_ENV"
       - name: Check current pin with default enforcement
         id: current
@@ -99,4 +101,4 @@ jobs:
           test "$ENFORCED_STATUS" = outdated
           test "$ENFORCED_OUTCOME" = failure
           test -z "$(git status --porcelain)"
-          test ! -d "external/shared library"
+          test ! -e "external/shared library/.git"
