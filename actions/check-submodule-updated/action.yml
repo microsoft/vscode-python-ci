@@ -1,0 +1,38 @@
+name: Check submodule updated
+description: Compare one committed submodule pin with the latest commit on an upstream branch.
+
+inputs:
+  path:
+    description: Submodule path relative to the caller's repository root.
+    required: true
+  branch:
+    description: Upstream branch to compare against.
+    default: main
+  fail-if-outdated:
+    description: Fail after reporting an outdated pin. Git/configuration errors always fail.
+    default: "true"
+
+outputs:
+  status:
+    description: current or outdated. Not guaranteed on Git/configuration errors.
+    value: ${{ steps.check.outputs.status }}
+  pinned-sha:
+    description: Submodule commit recorded in the caller's checked-out commit.
+    value: ${{ steps.check.outputs.pinned-sha }}
+  latest-sha:
+    description: Upstream branch tip observed during this check.
+    value: ${{ steps.check.outputs.latest-sha }}
+
+runs:
+  using: composite
+  steps:
+    - name: Check committed submodule pin
+      id: check
+      shell: bash
+      working-directory: ${{ github.workspace }}
+      env:
+        ACTION_PATH: ${{ github.action_path }}
+        SUBMODULE_PATH: ${{ inputs.path }}
+        SUBMODULE_BRANCH: ${{ inputs.branch }}
+        FAIL_IF_OUTDATED: ${{ inputs.fail-if-outdated }}
+      run: bash "$ACTION_PATH/check-submodule-updated.sh"
