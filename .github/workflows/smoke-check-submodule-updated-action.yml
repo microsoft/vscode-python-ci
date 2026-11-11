@@ -26,7 +26,6 @@ jobs:
       - name: Check Bash syntax and run offline regression tests
         shell: bash
         run: |
-          bash -n actions/check-submodule-updated/check-submodule-updated.sh
           bash -n actions/check-submodule-updated/tests/test.sh
           bash actions/check-submodule-updated/tests/test.sh
 

@@ -4,9 +4,32 @@
 
 set -euo pipefail
 
-script="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/check-submodule-updated.sh"
+action="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/action.yml"
 temporary=$(mktemp -d)
 trap 'rm -rf -- "$temporary"' EXIT
+
+for step in pin upstream check enforce; do
+    awk -v step="$step" '
+        { sub(/\r$/, "") }
+        /^      id:/ { selected = ($2 == step) }
+        selected && /^      run: \|$/ { block = 1; next }
+        block && /^        / { print substr($0, 9); next }
+        block && NF { exit }
+        block { print }
+    ' "$action" > "$temporary/$step.sh"
+    test -s "$temporary/$step.sh"
+    bash -n "$temporary/$step.sh"
+done
+
+run_action() {
+    GITHUB_OUTPUT="$temporary/pin-output" bash "$temporary/pin.sh" || return $?
+    UPSTREAM_URL=$(sed -n 's/^url=//p' "$temporary/pin-output") \
+        GITHUB_OUTPUT="$temporary/upstream-output" bash "$temporary/upstream.sh" || return $?
+    PINNED_SHA=$(sed -n 's/^pinned-sha=//p' "$temporary/pin-output") \
+        LATEST_SHA=$(sed -n 's/^latest-sha=//p' "$temporary/upstream-output") \
+        bash "$temporary/check.sh" || return $?
+    STATUS=$(sed -n 's/^status=//p' "$GITHUB_OUTPUT") bash "$temporary/enforce.sh"
+}
 
 init_repo() {
     git init --quiet --initial-branch=main "$1"
@@ -54,12 +77,14 @@ check() {
     local name=$1 expected_exit=$2 expected_status=$3 before after result
     : > "$temporary/output"
     : > "$temporary/summary"
+    : > "$temporary/pin-output"
+    : > "$temporary/upstream-output"
     before=$(snapshot)
     if (
         cd "$consumer"
-        SUBMODULE_PATH="$path" SUBMODULE_BRANCH="$branch" FAIL_IF_OUTDATED="$enforce" \
-            GITHUB_OUTPUT="$temporary/output" GITHUB_STEP_SUMMARY="$temporary/summary" \
-            bash "$script"
+        export SUBMODULE_PATH="$path" SUBMODULE_BRANCH="$branch" FAIL_IF_OUTDATED="$enforce" \
+            GITHUB_OUTPUT="$temporary/output" GITHUB_STEP_SUMMARY="$temporary/summary"
+        run_action
     ) > "$temporary/log" 2>&1; then
         result=0
     else

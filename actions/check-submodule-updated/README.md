@@ -5,6 +5,9 @@ upstream branch. This Bash composite action is read-only: it does not initialize
 submodules, update files or Git configuration, fetch history, or create commits
 and pull requests.
 
+All commands are inline in `action.yml`, split into steps to read the committed
+pin and URL, query upstream, compare and report, and enforce freshness.
+
 ## Usage
 
 ```yaml
@@ -90,10 +93,10 @@ on errors; errors do not produce a third status.
 From the repository root, with Bash and Git available:
 
 ```sh
-bash -n actions/check-submodule-updated/check-submodule-updated.sh
 bash -n actions/check-submodule-updated/tests/test.sh
 bash actions/check-submodule-updated/tests/test.sh
 ```
 
-The tests use temporary local Git repositories and do not require network
-access, GitHub credentials, Python, or additional packages.
+The tests extract and syntax-check the inline commands from `action.yml`, then
+run them against temporary local Git repositories. Bash, Git, awk, and sed are
+required; network access, GitHub credentials, and Python are not.

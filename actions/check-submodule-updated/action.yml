@@ -26,13 +26,100 @@ outputs:
 runs:
   using: composite
   steps:
-    - name: Check committed submodule pin
-      id: check
+    - name: Read committed submodule pin and URL
+      id: pin
       shell: bash
       working-directory: ${{ github.workspace }}
       env:
-        ACTION_PATH: ${{ github.action_path }}
+        SUBMODULE_PATH: ${{ inputs.path }}
+      run: |
+        set -euo pipefail
+
+        commit=$(git rev-parse --verify HEAD)
+        entry=$(git --literal-pathspecs ls-tree "$commit" -- "${SUBMODULE_PATH:?}")
+        read -r mode type pinned_sha _ <<< "$entry"
+        if [[ "$mode" != 160000 || "$type" != commit ]]; then
+            printf 'Not a committed submodule: %s\n' "$SUBMODULE_PATH" >&2
+            exit 1
+        fi
+
+        paths=$(git config --blob "$commit:.gitmodules" --get-regexp '^submodule\..*\.path$')
+        module_key=
+        while IFS= read -r entry; do
+            if [[ "$entry" == *" $SUBMODULE_PATH" ]]; then
+                key=${entry%" $SUBMODULE_PATH"}
+                if [[ "$key" == submodule.*.path ]]; then
+                    module_key=${key%.path}
+                    break
+                fi
+            fi
+        done <<< "$paths"
+        if [[ -z "$module_key" ]]; then
+            printf 'Submodule path is not configured in committed .gitmodules: %s\n' "$SUBMODULE_PATH" >&2
+            exit 1
+        fi
+        url=$(git config --blob "$commit:.gitmodules" --get "$module_key.url")
+        case "$url" in
+            /* | *://* | *:*) ;;
+            *)
+                printf 'Use an absolute upstream URL or path in .gitmodules.\n' >&2
+                exit 1
+                ;;
+        esac
+
+        printf 'pinned-sha=%s\nurl=%s\n' "$pinned_sha" "$url" >> "$GITHUB_OUTPUT"
+
+    - name: Query upstream branch tip
+      id: upstream
+      shell: bash
+      working-directory: ${{ github.workspace }}
+      env:
+        UPSTREAM_URL: ${{ steps.pin.outputs.url }}
+        SUBMODULE_BRANCH: ${{ inputs.branch }}
+      run: |
+        set -euo pipefail
+
+        branch=${SUBMODULE_BRANCH:-main}
+        remote=$(GIT_TERMINAL_PROMPT=0 git ls-remote --exit-code -- "$UPSTREAM_URL" "refs/heads/$branch")
+        read -r latest_sha ref <<< "$remote"
+        if [[ -z "$latest_sha" || "$ref" != "refs/heads/$branch" || "$remote" == *$'\n'* ]]; then
+            printf 'Expected exactly one upstream branch tip for %s.\n' "$branch" >&2
+            exit 1
+        fi
+
+        printf 'latest-sha=%s\n' "$latest_sha" >> "$GITHUB_OUTPUT"
+
+    - name: Compare and report submodule freshness
+      id: check
+      shell: bash
+      env:
         SUBMODULE_PATH: ${{ inputs.path }}
         SUBMODULE_BRANCH: ${{ inputs.branch }}
+        PINNED_SHA: ${{ steps.pin.outputs.pinned-sha }}
+        LATEST_SHA: ${{ steps.upstream.outputs.latest-sha }}
+      run: |
+        set -euo pipefail
+
+        status=outdated
+        if [[ "$PINNED_SHA" == "$LATEST_SHA" ]]; then
+            status=current
+        fi
+
+        printf 'status=%s\npinned-sha=%s\nlatest-sha=%s\n' \
+            "$status" "$PINNED_SHA" "$LATEST_SHA" >> "$GITHUB_OUTPUT"
+        printf '### Submodule freshness\n\nPath: `%s`  \nBranch: `%s`  \nStatus: **%s**\n\nPinned: `%s`  \nLatest: `%s`\n' \
+            "$SUBMODULE_PATH" "${SUBMODULE_BRANCH:-main}" "$status" "$PINNED_SHA" "$LATEST_SHA" >> "$GITHUB_STEP_SUMMARY"
+        printf '%s: %s (pinned %s, latest %s)\n' "$SUBMODULE_PATH" "$status" "$PINNED_SHA" "$LATEST_SHA"
+
+    - name: Enforce submodule freshness
+      id: enforce
+      shell: bash
+      env:
+        STATUS: ${{ steps.check.outputs.status }}
         FAIL_IF_OUTDATED: ${{ inputs.fail-if-outdated }}
-      run: bash "$ACTION_PATH/check-submodule-updated.sh"
+      run: |
+        set -euo pipefail
+
+        if [[ "$STATUS" == outdated && "${FAIL_IF_OUTDATED:-true}" != false ]]; then
+            exit 1
+        fi
