@@ -90,13 +90,20 @@ on errors; errors do not produce a third status.
 
 ## Local validation
 
-From the repository root, with Bash and Git available:
+From the repository root, with Python 3.13, Bash, and Git available:
 
 ```sh
-bash -n actions/check-submodule-updated/tests/test.sh
-bash actions/check-submodule-updated/tests/test.sh
+python -m pip install -r actions/check-submodule-updated/tests/requirements.txt
+python -m unittest discover -s actions/check-submodule-updated/tests -v
 ```
 
-The tests extract and syntax-check the inline commands from `action.yml`, then
-run them against temporary local Git repositories. Bash, Git, awk, and sed are
-required; network access, GitHub credentials, and Python are not.
+The Python tests parse `action.yml` using PyYAML, resolve its simple
+input/output/workspace references, and execute the actual inline Bash commands
+against temporary local Git repositories. Fixtures and assertions are in Python;
+there is no awk/sed extraction or duplicated step wiring. The tests are offline
+after installing dependencies and need no GitHub credentials.
+
+This is a focused test harness, not a complete GitHub Actions runner. Hosted
+composite smoke tests remain the integration check for actual runner behavior.
+Python and PyYAML are test dependencies only; the action itself still requires
+only Bash and Git.

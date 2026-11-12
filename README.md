@@ -69,7 +69,7 @@ change repository state, or integrate with release preparation automatically.
 | [scripts/localization_smoke_test.py](scripts/localization_smoke_test.py)                           | Opt-in real CLI export/import round trips using synthetic handbacks.               |
 | [smoke-localization-action.yml](.github/workflows/smoke-localization-action.yml)                   | Linux/Windows localization tests and credential-free real CLI validation.          |
 | [actions/check-submodule-updated/](actions/check-submodule-updated/README.md)                       | Read-only Bash action comparing one submodule pin with an upstream branch tip.      |
-| [smoke-check-submodule-updated-action.yml](.github/workflows/smoke-check-submodule-updated-action.yml) | Linux/Windows Bash regression tests and composite action smoke tests.             |
+| [smoke-check-submodule-updated-action.yml](.github/workflows/smoke-check-submodule-updated-action.yml) | Linux/Windows Python regression tests and Bash composite action smoke tests.      |
 
 ## Local development and validation
 
@@ -99,8 +99,10 @@ to include the pinned npm CLI round trips run by localization CI.
 When changing the action, update its documentation and tests alongside the
 implementation.
 
-The submodule freshness action requires no Python or package installation:
+The submodule freshness action remains Bash-only. Its offline tests use Python
+and PyYAML:
 
 ```sh
-bash actions/check-submodule-updated/tests/test.sh
+python -m pip install -r actions/check-submodule-updated/tests/requirements.txt
+python -m unittest discover -s actions/check-submodule-updated/tests -v
 ```
