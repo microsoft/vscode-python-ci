@@ -8,33 +8,24 @@ import tempfile
 import unittest
 from pathlib import Path
 
-import yaml
+SCRIPTS = Path(__file__).resolve().parents[1] / "scripts"
 
 
-ACTION = Path(__file__).resolve().parents[1]
+def find_bash():
+    if os.name == "nt":
+        program_files = Path(os.environ.get("ProgramFiles", r"C:\Program Files"))
+        git_bash = program_files / "Git" / "bin" / "bash.exe"
+        if git_bash.exists():
+            return str(git_bash)
+    return shutil.which("bash") or "bash"
 
 
 class SubmoduleFreshnessTests(unittest.TestCase):
-    @classmethod
-    def setUpClass(cls):
-        cls.action = yaml.safe_load((ACTION / "action.yml").read_text(encoding="utf-8"))
-        git_path = Path(shutil.which("git"))
-        cls.bash = (
-            str(
-                next(
-                    parent / "bin" / "bash.exe"
-                    for parent in git_path.parents
-                    if (parent / "bin" / "bash.exe").is_file()
-                )
-            )
-            if os.name == "nt"
-            else shutil.which("bash")
-        )
-
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory(prefix="submodule action ")
         self.addCleanup(self.temp.cleanup)
         self.root = Path(self.temp.name)
+        self.bash = find_bash()
         self.upstream = self.root / "upstream library"
         self.consumer = self.root / "consumer repository"
         self.path = "external/shared library"
@@ -68,7 +59,7 @@ class SubmoduleFreshnessTests(unittest.TestCase):
             cwd=cwd or self.consumer,
             env=self.environment,
             capture_output=True,
-            text=True,
+            encoding="utf-8",
             check=True,
         ).stdout
 
@@ -99,65 +90,103 @@ class SubmoduleFreshnessTests(unittest.TestCase):
             )
         return state
 
+    def run_script(self, name, output, **environment):
+        run_environment = {
+            **self.environment,
+            "GITHUB_OUTPUT": self.shell_path(output),
+            **environment,
+        }
+        if "GITHUB_STEP_SUMMARY" in run_environment:
+            run_environment["GITHUB_STEP_SUMMARY"] = self.shell_path(
+                Path(run_environment["GITHUB_STEP_SUMMARY"])
+            )
+        return subprocess.run(
+            [self.bash, self.shell_path(SCRIPTS / name)],
+            cwd=self.consumer,
+            env=run_environment,
+            capture_output=True,
+            encoding="utf-8",
+        )
+
+    def shell_path(self, path):
+        if os.name != "nt":
+            return str(path)
+        return subprocess.run(
+            [self.bash, "-c", 'cygpath -u "$1"', "cygpath", str(path)],
+            capture_output=True,
+            encoding="utf-8",
+            check=True,
+        ).stdout.strip()
+
+    def read_outputs(self, path):
+        return dict(
+            line.split("=", 1) for line in path.read_text(encoding="utf-8").splitlines()
+        )
+
     def run_action(self, **inputs):
         before = self.snapshot()
-        values = {
-            f"inputs.{name}": str(details.get("default", ""))
-            for name, details in self.action["inputs"].items()
-        }
-        values.update({f"inputs.{name}": value for name, value in inputs.items()})
-        values["github.workspace"] = str(self.consumer)
-
-        # Only resolve the action's simple input/output/workspace references.
-        def resolve(value):
-            if value.startswith("${{") and value.endswith("}}"):
-                return values.get(value[3:-2].strip(), "")
-            return value
-
+        pin_output = self.root / "pin-output"
+        upstream_output = self.root / "upstream-output"
+        output = self.root / "output"
         summary = self.root / "summary"
-        summary.write_text("", encoding="utf-8")
-        logs = []
-        for step in self.action["runs"]["steps"]:
-            output = self.root / f"{step['id']}.output"
-            output.write_text("", encoding="utf-8")
-            environment = {
-                **self.environment,
-                **{name: resolve(value) for name, value in step.get("env", {}).items()},
-                "GITHUB_OUTPUT": str(output),
-                "GITHUB_STEP_SUMMARY": str(summary),
-            }
-            result = subprocess.run(
-                [
-                    self.bash,
-                    "--noprofile",
-                    "--norc",
-                    "-e",
-                    "-o",
-                    "pipefail",
-                    "-c",
-                    step["run"],
-                ],
-                cwd=resolve(step.get("working-directory", "${{ github.workspace }}")),
-                env=environment,
-                capture_output=True,
-                text=True,
-            )
-            logs.append(f"[{step['id']}]\n{result.stdout}{result.stderr}")
-            for line in output.read_text(encoding="utf-8").splitlines():
-                name, value = line.split("=", 1)
-                values[f"steps.{step['id']}.outputs.{name}"] = value
-            if result.returncode:
-                break
-        self.assertEqual(self.snapshot(), before, "Action changed repository state")
-        outputs = {
-            name: resolve(details["value"])
-            for name, details in self.action["outputs"].items()
+        for path in (pin_output, upstream_output, output, summary):
+            path.write_text("", encoding="utf-8")
+
+        inputs = {
+            "path": self.path,
+            "branch": "main",
+            "fail-if-outdated": "true",
+            **inputs,
         }
+        pin = self.run_script(
+            "read_pin.sh",
+            pin_output,
+            SUBMODULE_PATH=inputs["path"],
+        )
+        logs = pin.stdout + pin.stderr
+        if pin.returncode != 0:
+            result_code = pin.returncode
+        else:
+            pin_values = self.read_outputs(pin_output)
+            upstream = self.run_script(
+                "read_upstream.sh",
+                upstream_output,
+                SUBMODULE_COMMIT=pin_values["commit"],
+                SUBMODULE_PATH=inputs["path"],
+                SUBMODULE_BRANCH=inputs["branch"],
+                GIT_TERMINAL_PROMPT="0",
+            )
+            logs += upstream.stdout + upstream.stderr
+            if upstream.returncode != 0:
+                result_code = upstream.returncode
+            else:
+                upstream_values = self.read_outputs(upstream_output)
+                compare = self.run_script(
+                    "compare.sh",
+                    output,
+                    GITHUB_STEP_SUMMARY=str(summary),
+                    SUBMODULE_PATH=inputs["path"],
+                    SUBMODULE_BRANCH=inputs["branch"],
+                    PINNED_SHA=pin_values["pinned-sha"],
+                    LATEST_SHA=upstream_values["sha"],
+                )
+                logs += compare.stdout + compare.stderr
+                result_code = compare.returncode
+                if (
+                    result_code == 0
+                    and self.read_outputs(output)["status"] == "outdated"
+                    and inputs["fail-if-outdated"] != "false"
+                ):
+                    result_code = 1
+                    logs += "Submodule pin is outdated.\n"
+
+        self.assertEqual(self.snapshot(), before, "Action changed repository state")
+        outputs = self.read_outputs(output)
         return (
-            result.returncode,
+            result_code,
             outputs,
             summary.read_text(encoding="utf-8"),
-            "\n".join(logs),
+            logs,
         )
 
     def check(self, status, exit_code=0, pinned=None, latest=None, **inputs):
@@ -179,11 +208,22 @@ class SubmoduleFreshnessTests(unittest.TestCase):
         inputs["fail-if-outdated"] = "false"
         code, outputs, summary, logs = self.run_action(**inputs)
         self.assertNotEqual(code, 0, logs)
-        self.assertEqual(outputs, {"status": "", "pinned-sha": "", "latest-sha": ""}, logs)
+        self.assertEqual(outputs, {}, logs)
         self.assertEqual(summary, "", logs)
 
     def test_uninitialized_outdated_report_only_with_spaces(self):
         self.assertFalse((self.consumer / self.path).exists())
+        self.check("outdated", **{"fail-if-outdated": "false"})
+
+    def test_unicode_module_name_and_path(self):
+        self.git("config", "-f", ".gitmodules", "--remove-section", self.module)
+        self.git("update-index", "--force-remove", "--", self.path)
+        self.module = "submodule.Shared \u03bb module"
+        self.path = "external/shared \u03bb library"
+        self.git("config", "-f", ".gitmodules", f"{self.module}.path", self.path)
+        self.git("config", "-f", ".gitmodules", f"{self.module}.url", str(self.upstream))
+        self.pin(self.old_sha)
+        self.environment["PYTHONUTF8"] = "0"
         self.check("outdated", **{"fail-if-outdated": "false"})
 
     def test_outdated_enforcement_preserves_outputs(self):
@@ -223,6 +263,19 @@ class SubmoduleFreshnessTests(unittest.TestCase):
         self.git("add", ".gitmodules")
         self.git("commit", "--quiet", "-m", "Add decoy before target submodule")
         self.check("outdated", **{"fail-if-outdated": "false"})
+
+    def test_duplicate_committed_submodule_path_is_rejected(self):
+        self.git("config", "-f", ".gitmodules", "submodule.decoy.path", self.path)
+        self.git(
+            "config",
+            "-f",
+            ".gitmodules",
+            "submodule.decoy.url",
+            str(self.root / "decoy remote"),
+        )
+        self.git("add", ".gitmodules")
+        self.git("commit", "--quiet", "-m", "Add duplicate submodule path")
+        self.check_failure()
 
     def test_explicit_upstream_branch_overrides_main(self):
         self.pin(self.latest_sha)
@@ -266,8 +319,19 @@ class SubmoduleFreshnessTests(unittest.TestCase):
     def test_regular_file_is_not_a_submodule(self):
         self.check_failure(path=".gitmodules")
 
+    def test_directory_with_multiple_entries_is_not_a_submodule(self):
+        (self.consumer / "external").mkdir()
+        extra_file = self.consumer / "external" / "regular.txt"
+        extra_file.write_text("not a submodule\n", encoding="utf-8")
+        self.git("add", "external/regular.txt")
+        self.git("commit", "--quiet", "-m", "Add another external entry")
+        self.check_failure(path="external/")
+
     def test_missing_branch_fails_in_report_only_mode(self):
         self.check_failure(branch="missing-branch")
+
+    def test_branch_pattern_is_not_accepted_as_an_exact_branch(self):
+        self.check_failure(branch="mai*")
 
     def test_unavailable_upstream_fails_in_report_only_mode(self):
         self.git(

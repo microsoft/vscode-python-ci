@@ -1,12 +1,15 @@
 # Check submodule updated
 
 Check whether one submodule's **committed pin** equals the observed tip of an
-upstream branch. This Bash composite action is read-only: it does not initialize
-submodules, update files or Git configuration, fetch history, or create commits
-and pull requests.
+upstream branch. This Bash-based composite action is read-only: it does not
+initialize submodules, update files or Git configuration, fetch history, or
+create commits and pull requests.
 
-All commands are inline in `action.yml`, split into steps to read the committed
-pin and URL, query upstream, compare and report, and enforce freshness.
+`action.yml` has separate steps for reading the committed pin, querying the
+upstream branch, comparing the SHAs, and enforcing freshness. The steps call
+small scripts under `scripts/`; the configured upstream URL stays within its
+lookup step and is not passed through action outputs. No Python runtime or
+packages are needed to run the action.
 
 ## Usage
 
@@ -71,9 +74,9 @@ on errors; errors do not produce a third status.
 
 ## Requirements and limitations
 
-- Bash and Git must be on `PATH`. GitHub-hosted Linux, Windows, and macOS runners
-  provide them; self-hosted runners must supply them. Linux and Windows are
-  covered by this action's CI.
+- Bash and Git 2.36 or newer must be on `PATH`. GitHub-hosted Linux, Windows, and
+  macOS runners provide them; self-hosted runners must supply them. Linux and
+  Windows are covered by this action's CI.
 - The committed `.gitmodules` URL must be an absolute Git URL or absolute local
   path. Relative submodule URLs are not resolved against the parent origin.
 - Authentication uses the caller's existing Git configuration. Public HTTPS
@@ -90,20 +93,15 @@ on errors; errors do not produce a third status.
 
 ## Local validation
 
-From the repository root, with Python 3.13, Bash, and Git available:
+From the repository root, with Python 3, Bash, and Git available:
 
 ```sh
-python -m pip install -r actions/check-submodule-updated/tests/requirements.txt
 python -m unittest discover -s actions/check-submodule-updated/tests -v
 ```
 
-The Python tests parse `action.yml` using PyYAML, resolve its simple
-input/output/workspace references, and execute the actual inline Bash commands
-against temporary local Git repositories. Fixtures and assertions are in Python;
-there is no awk/sed extraction or duplicated step wiring. The tests are offline
-after installing dependencies and need no GitHub credentials.
-
-This is a focused test harness, not a complete GitHub Actions runner. Hosted
-composite smoke tests remain the integration check for actual runner behavior.
-Python and PyYAML are test dependencies only; the action itself still requires
-only Bash and Git.
+The tests invoke the same Bash helper scripts as the action against temporary
+local Git repositories, checking outputs, enforcement, failures, and unchanged
+repository state. The Python test harness uses only the standard library; the
+tests need no network access, GitHub credentials, or additional packages.
+Hosted composite smoke tests remain the integration check for the action
+wrapper and actual GitHub runner behavior.
