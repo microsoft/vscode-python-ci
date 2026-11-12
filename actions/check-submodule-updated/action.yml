@@ -1,0 +1,67 @@
+name: Check submodule updated
+description: Compare one committed submodule pin with the latest commit on an upstream branch.
+
+inputs:
+  path:
+    description: Submodule path relative to the caller's repository root.
+    required: true
+  branch:
+    description: Upstream branch to compare against.
+    default: main
+  fail-if-outdated:
+    description: Fail after reporting an outdated pin. Git/configuration errors always fail.
+    default: "true"
+
+outputs:
+  status:
+    description: current or outdated. Not guaranteed on Git/configuration errors.
+    value: ${{ steps.compare.outputs.status }}
+  pinned-sha:
+    description: Submodule commit recorded in the caller's checked-out commit.
+    value: ${{ steps.compare.outputs.pinned-sha }}
+  latest-sha:
+    description: Upstream branch tip observed during this check.
+    value: ${{ steps.compare.outputs.latest-sha }}
+
+runs:
+  using: composite
+  steps:
+    - name: Read committed submodule pin
+      id: pin
+      shell: bash
+      working-directory: ${{ github.workspace }}
+      env:
+        ACTION_PATH: ${{ github.action_path }}
+        SUBMODULE_PATH: ${{ inputs.path }}
+      run: |
+        bash "$ACTION_PATH/scripts/read_pin.sh"
+    - name: Read upstream branch tip
+      id: upstream
+      shell: bash
+      working-directory: ${{ github.workspace }}
+      env:
+        ACTION_PATH: ${{ github.action_path }}
+        SUBMODULE_COMMIT: ${{ steps.pin.outputs.commit }}
+        SUBMODULE_PATH: ${{ inputs.path }}
+        SUBMODULE_BRANCH: ${{ inputs.branch }}
+        GIT_TERMINAL_PROMPT: "0"
+      run: |
+        bash "$ACTION_PATH/scripts/read_upstream.sh"
+    - name: Compare pin with upstream tip
+      id: compare
+      shell: bash
+      working-directory: ${{ github.workspace }}
+      env:
+        ACTION_PATH: ${{ github.action_path }}
+        SUBMODULE_PATH: ${{ inputs.path }}
+        SUBMODULE_BRANCH: ${{ inputs.branch }}
+        PINNED_SHA: ${{ steps.pin.outputs.pinned-sha }}
+        LATEST_SHA: ${{ steps.upstream.outputs.sha }}
+      run: |
+        bash "$ACTION_PATH/scripts/compare.sh"
+    - name: Enforce freshness
+      if: steps.compare.outputs.status == 'outdated' && inputs.fail-if-outdated != 'false'
+      shell: bash
+      run: |
+        echo "Submodule pin is outdated." >&2
+        exit 1

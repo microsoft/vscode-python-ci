@@ -1,0 +1,103 @@
+name: Validate submodule freshness action
+
+on:
+  push:
+    paths:
+      - actions/check-submodule-updated/**
+      - .github/workflows/smoke-check-submodule-updated-action.yml
+  pull_request:
+    paths:
+      - actions/check-submodule-updated/**
+      - .github/workflows/smoke-check-submodule-updated-action.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  tests:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.13"
+      - name: Run offline Python action regression tests
+        run: python -m unittest discover -s actions/check-submodule-updated/tests -v
+
+  smoke:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 5
+    steps:
+      - name: Prepare an uninitialized consumer without checking out the action repository
+        shell: bash
+        run: |
+          upstream=$(mktemp -d)
+          git init --quiet --initial-branch=main "$upstream"
+          git -C "$upstream" config user.name Fixture
+          git -C "$upstream" config user.email fixture@example.invalid
+          git -C "$upstream" -c commit.gpgsign=false commit --quiet --allow-empty -m Initial
+          upstream=$(git -C "$upstream" rev-parse --show-toplevel)
+          pinned=$(git -C "$upstream" rev-parse HEAD)
+          git init --quiet --initial-branch=main
+          git config user.name Fixture
+          git config user.email fixture@example.invalid
+          git config -f .gitmodules submodule.shared.path "external/shared library"
+          git config -f .gitmodules submodule.shared.url "$upstream"
+          git add .gitmodules
+          git update-index --add --cacheinfo "160000,$pinned,external/shared library"
+          git -c commit.gpgsign=false commit --quiet -m "Pin shared library"
+          mkdir -p "external/shared library"
+          test -z "$(git status --porcelain)"
+          printf 'UPSTREAM=%s\nPINNED=%s\n' "$upstream" "$pinned" >> "$GITHUB_ENV"
+      - name: Check current pin with default enforcement
+        id: current
+        uses: $/actions/check-submodule-updated
+        with:
+          path: external/shared library
+      - name: Advance upstream without modifying the consumer
+        shell: bash
+        run: |
+          git -C "$UPSTREAM" -c commit.gpgsign=false commit --quiet --allow-empty -m Latest
+          printf 'LATEST=%s\n' "$(git -C "$UPSTREAM" rev-parse HEAD)" >> "$GITHUB_ENV"
+      - name: Report outdated pin
+        id: outdated
+        uses: $/actions/check-submodule-updated
+        with:
+          path: external/shared library
+          fail-if-outdated: "false"
+      - name: Reject outdated pin with default enforcement
+        id: enforced
+        continue-on-error: true
+        uses: $/actions/check-submodule-updated
+        with:
+          path: external/shared library
+      - name: Verify action outputs, enforcement and unchanged consumer
+        shell: bash
+        env:
+          CURRENT_STATUS: ${{ steps.current.outputs.status }}
+          CURRENT_PIN: ${{ steps.current.outputs.pinned-sha }}
+          CURRENT_LATEST: ${{ steps.current.outputs.latest-sha }}
+          OUTDATED_STATUS: ${{ steps.outdated.outputs.status }}
+          OUTDATED_PIN: ${{ steps.outdated.outputs.pinned-sha }}
+          OUTDATED_LATEST: ${{ steps.outdated.outputs.latest-sha }}
+          ENFORCED_STATUS: ${{ steps.enforced.outputs.status }}
+          ENFORCED_OUTCOME: ${{ steps.enforced.outcome }}
+        run: |
+          test "$CURRENT_STATUS" = current
+          test "$CURRENT_PIN" = "$PINNED"
+          test "$CURRENT_LATEST" = "$PINNED"
+          test "$OUTDATED_STATUS" = outdated
+          test "$OUTDATED_PIN" = "$PINNED"
+          test "$OUTDATED_LATEST" = "$LATEST"
+          test "$ENFORCED_STATUS" = outdated
+          test "$ENFORCED_OUTCOME" = failure
+          test -z "$(git status --porcelain)"
+          test ! -e "external/shared library/.git"

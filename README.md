@@ -1,10 +1,11 @@
 # Pylance Engineering
 
 Shared engineering automation for Pylance and related Python extension
-repositories. This repository contains Python-backed composite GitHub Actions
+repositories. This repository contains composite GitHub Actions
 for checking CI Python-version coverage, reading/calculating extension versions,
 preparing extension release branches, and submitting English localization,
-along with their tests and validation workflows.
+along with their tests and validation workflows. It also provides a Bash-based
+submodule freshness check.
 
 ## Check CI Python versions
 
@@ -41,6 +42,16 @@ The helper remains at `scripts/localization.py` for compatibility with existing
 shared Azure templates. Caller credentials, extraction sources, and localization
 data remain in their current repositories.
 
+## Submodule freshness
+
+The [check-submodule-updated action](actions/check-submodule-updated/README.md)
+compares one committed submodule pin with the observed tip of an upstream branch.
+It returns `current` or `outdated`, with optional report-only behavior. Git and
+configuration errors always fail.
+
+The action uses Bash and Git. It does not initialize or update submodules,
+change repository state, or integrate with release preparation automatically.
+
 ## Repository contents
 
 | Path                                                                                               | Purpose                                                                            |
@@ -57,6 +68,8 @@ data remain in their current repositories.
 | [scripts/localization_test.py](scripts/localization_test.py)                                       | Localization regression tests, including local Git submissions.                    |
 | [scripts/localization_smoke_test.py](scripts/localization_smoke_test.py)                           | Opt-in real CLI export/import round trips using synthetic handbacks.               |
 | [smoke-localization-action.yml](.github/workflows/smoke-localization-action.yml)                   | Linux/Windows localization tests and credential-free real CLI validation.          |
+| [actions/check-submodule-updated/](actions/check-submodule-updated/README.md)                       | Read-only Bash action comparing one submodule pin with an upstream branch tip.      |
+| [smoke-check-submodule-updated-action.yml](.github/workflows/smoke-check-submodule-updated-action.yml) | Linux/Windows regression tests and composite action smoke tests.                   |
 
 ## Local development and validation
 
@@ -85,3 +98,10 @@ to include the pinned npm CLI round trips run by localization CI.
 
 When changing the action, update its documentation and tests alongside the
 implementation.
+
+The submodule freshness action and its offline tests use only Python's standard
+library and Git:
+
+```sh
+python -m unittest discover -s actions/check-submodule-updated/tests -v
+```
