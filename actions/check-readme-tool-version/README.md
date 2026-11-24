@@ -45,3 +45,5 @@ steps:
 
 The [smoke workflow](../../.github/workflows/smoke-check-readme-tool-version-action.yml)
 runs the action against matching and mismatching fixtures in `tests/fixtures/`.
+The fixture pins use a `.fixture` extension so GitHub's dependency graph does not
+treat them as real manifests and raise Dependabot alerts.

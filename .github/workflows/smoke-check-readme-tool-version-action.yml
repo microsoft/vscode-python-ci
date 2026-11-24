@@ -25,7 +25,7 @@ jobs:
         with:
           package: pylint
           readme: actions/check-readme-tool-version/tests/fixtures/match/README.md
-          requirements: actions/check-readme-tool-version/tests/fixtures/match/requirements.txt
+          requirements: actions/check-readme-tool-version/tests/fixtures/match/requirements.fixture
       - name: Verify matching output
         env:
           VERSION: ${{ steps.match.outputs.version }}
@@ -37,7 +37,7 @@ jobs:
         with:
           package: pylint
           readme: actions/check-readme-tool-version/tests/fixtures/mismatch/README.md
-          requirements: actions/check-readme-tool-version/tests/fixtures/mismatch/requirements.txt
+          requirements: actions/check-readme-tool-version/tests/fixtures/mismatch/requirements.fixture
       - name: Verify mismatch failed
         env:
           OUTCOME: ${{ steps.mismatch.outcome }}
