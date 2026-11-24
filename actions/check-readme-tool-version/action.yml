@@ -1,0 +1,47 @@
+name: Check README tool version
+description: Check that the bundled tool version stated in a README matches its requirements.txt pin.
+
+inputs:
+  package:
+    description: PyPI package name of the bundled tool, such as pylint or black.
+    required: true
+  readme:
+    description: README path, absolute or relative to the caller's workspace.
+    default: README.md
+  requirements:
+    description: Requirements file path, absolute or relative to the caller's workspace.
+    default: requirements.txt
+
+outputs:
+  version:
+    description: The matching tool version.
+    value: ${{ steps.requirements.outputs.version }}
+
+runs:
+  using: composite
+  steps:
+    - name: Read README version
+      id: readme
+      shell: bash
+      working-directory: ${{ github.workspace }}
+      env:
+        PACKAGE: ${{ inputs.package }}
+        README_PATH: ${{ inputs.readme }}
+      run: echo "version=$(grep -oP "ships with \`\Q$PACKAGE\E==?\K[^\`\s]+(?=\`)" "$README_PATH")" >> "$GITHUB_OUTPUT"
+    - name: Read requirements pin
+      id: requirements
+      shell: bash
+      working-directory: ${{ github.workspace }}
+      env:
+        PACKAGE: ${{ inputs.package }}
+        REQUIREMENTS_PATH: ${{ inputs.requirements }}
+      run: echo "version=$(grep -oP "^\Q$PACKAGE\E==\K[^\s;]+" "$REQUIREMENTS_PATH")" >> "$GITHUB_OUTPUT"
+    - name: Compare versions
+      shell: bash
+      env:
+        PACKAGE: ${{ inputs.package }}
+        README_PATH: ${{ inputs.readme }}
+        REQUIREMENTS_PATH: ${{ inputs.requirements }}
+        README_VERSION: ${{ steps.readme.outputs.version }}
+        PINNED_VERSION: ${{ steps.requirements.outputs.version }}
+      run: '[[ -n "$PINNED_VERSION" && "$README_VERSION" == "$PINNED_VERSION" ]] || { echo "::error file=$README_PATH::README says $PACKAGE ${README_VERSION:-<none>}, but $REQUIREMENTS_PATH pins ${PINNED_VERSION:-<none>}"; exit 1; }'

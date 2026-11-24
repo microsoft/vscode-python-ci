@@ -1,0 +1,44 @@
+name: Validate README tool version action
+
+on:
+  push:
+    paths:
+      - actions/check-readme-tool-version/**
+      - .github/workflows/smoke-check-readme-tool-version-action.yml
+  pull_request:
+    paths:
+      - actions/check-readme-tool-version/**
+      - .github/workflows/smoke-check-readme-tool-version-action.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Check matching versions
+        id: match
+        uses: ./actions/check-readme-tool-version
+        with:
+          package: pylint
+          readme: actions/check-readme-tool-version/tests/fixtures/match/README.md
+          requirements: actions/check-readme-tool-version/tests/fixtures/match/requirements.txt
+      - name: Verify matching output
+        env:
+          VERSION: ${{ steps.match.outputs.version }}
+        run: test "$VERSION" = "4.0.9"
+      - name: Check mismatching versions
+        id: mismatch
+        continue-on-error: true
+        uses: ./actions/check-readme-tool-version
+        with:
+          package: pylint
+          readme: actions/check-readme-tool-version/tests/fixtures/mismatch/README.md
+          requirements: actions/check-readme-tool-version/tests/fixtures/mismatch/requirements.txt
+      - name: Verify mismatch failed
+        env:
+          OUTCOME: ${{ steps.mismatch.outcome }}
+        run: test "$OUTCOME" = "failure"

@@ -52,6 +52,13 @@ configuration errors always fail.
 The action uses Bash and Git. It does not initialize or update submodules,
 change repository state, or integrate with release preparation automatically.
 
+## README tool version
+
+The [check-readme-tool-version action](actions/check-readme-tool-version/README.md)
+checks that the bundled tool version stated in an extension's README matches the
+pin in its `requirements.txt`. It is read-only and uses only Bash and GNU
+`grep`.
+
 ## Repository contents
 
 | Path                                                                                               | Purpose                                                                            |
@@ -70,6 +77,8 @@ change repository state, or integrate with release preparation automatically.
 | [smoke-localization-action.yml](.github/workflows/smoke-localization-action.yml)                   | Linux/Windows localization tests and credential-free real CLI validation.          |
 | [actions/check-submodule-updated/](actions/check-submodule-updated/README.md)                       | Read-only Bash action comparing one submodule pin with an upstream branch tip.      |
 | [smoke-check-submodule-updated-action.yml](.github/workflows/smoke-check-submodule-updated-action.yml) | Linux/Windows regression tests and composite action smoke tests.                   |
+| [actions/check-readme-tool-version/](actions/check-readme-tool-version/README.md)                   | Check that a README's bundled tool version matches its requirements pin.            |
+| [smoke-check-readme-tool-version-action.yml](.github/workflows/smoke-check-readme-tool-version-action.yml) | Composite action smoke tests against matching and mismatching fixtures.       |
 
 ## Local development and validation
 
