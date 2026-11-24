@@ -35,7 +35,7 @@ runs:
       env:
         PACKAGE: ${{ inputs.package }}
         REQUIREMENTS_PATH: ${{ inputs.requirements }}
-      run: echo "version=$(grep -oP "^\Q$PACKAGE\E==\K[^\s;]+" "$REQUIREMENTS_PATH")" >> "$GITHUB_OUTPUT"
+      run: echo "version=$(grep -oP "^\Q$PACKAGE\E==\K[^\s;\\\\]+" "$REQUIREMENTS_PATH")" >> "$GITHUB_OUTPUT"
     - name: Compare versions
       shell: bash
       env:
